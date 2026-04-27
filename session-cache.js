@@ -212,7 +212,7 @@ function buildProjectsFromCache(showArchived) {
   // Inject active plain terminal sessions so they participate in sorting
   for (const [sessionId, session] of activeSessions) {
     if (session.exited || !session.isPlainTerminal) continue;
-    const folder = session.projectPath.replace(/[/_]/g, '-').replace(/^-/, '-');
+    const folder = session.projectPath.replace(/[\\/:_]/g, '-').replace(/^-/, '-');
     if (hiddenProjects.has(session.projectPath)) continue;
     if (!projectMap.has(folder)) {
       projectMap.set(folder, { folder, projectPath: session.projectPath, sessions: [] });

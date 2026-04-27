@@ -144,7 +144,7 @@ function init(log, runCommand) {
       const sessionId = crypto.randomUUID();
       const msgId = crypto.randomUUID();
       const timestamp = new Date().toISOString();
-      const folder = projectPath.replace(/[/_]/g, '-').replace(/^-/, '-');
+      const folder = projectPath.replace(/[\\/:_]/g, '-').replace(/^-/, '-');
       const claudeProjectDir = path.join(PROJECTS_DIR, folder);
 
       fs.mkdirSync(claudeProjectDir, { recursive: true });
@@ -191,7 +191,7 @@ function init(log, runCommand) {
       const dotClaudeDir = path.dirname(commandsDir);
       const projectPath = path.dirname(dotClaudeDir);
 
-      const folder = projectPath.replace(/[/_]/g, '-').replace(/^-/, '-');
+      const folder = projectPath.replace(/[\\/:_]/g, '-').replace(/^-/, '-');
       const schedule = {
         file: path.basename(filePath),
         filePath, projectPath, folder,
