@@ -55,15 +55,23 @@ jobs:
       - name: Bundle CodeMirror
         run: npm run bundle:codemirror
 
-      - name: Build
-        run: npx electron-builder --${{ matrix.platform }} --publish never
+      - name: Build (signed macOS)
+        if: matrix.platform == 'mac' && env.HAS_CSC == 'true'
+        run: npx electron-builder --mac --publish never
         env:
-          CSC_LINK: ${{ matrix.platform == 'mac' && secrets.CSC_LINK || '' }}
-          CSC_KEY_PASSWORD: ${{ matrix.platform == 'mac' && secrets.CSC_KEY_PASSWORD || '' }}
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ matrix.platform == 'mac' && secrets.CSC_LINK != '' }}
+          HAS_CSC: ${{ secrets.CSC_LINK != '' }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Build (unsigned or non-macOS)
+        if: matrix.platform != 'mac' || env.HAS_CSC != 'true'
+        run: npx electron-builder --${{ matrix.platform }} --publish never
+        env:
+          HAS_CSC: ${{ secrets.CSC_LINK != '' }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
