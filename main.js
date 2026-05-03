@@ -149,7 +149,7 @@ function createWindow() {
     ...bounds,
     minWidth: 800,
     minHeight: 500,
-    title: 'Switchboard',
+    title: 'Switchboard N',
     icon: path.join(__dirname, 'build', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
