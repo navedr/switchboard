@@ -335,6 +335,12 @@ function renderProjects(projects, resort) {
     settingsBtn.innerHTML = ICONS.gear(16);
     header.appendChild(settingsBtn);
 
+    const collapseGroupsBtn = document.createElement('button');
+    collapseGroupsBtn.className = 'project-collapse-groups-btn';
+    collapseGroupsBtn.title = 'Collapse/expand all groups';
+    collapseGroupsBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6-6 6 6"/><path d="M6 15l6 6 6-6"/></svg>';
+    header.appendChild(collapseGroupsBtn);
+
     const archiveGroupBtn = document.createElement('button');
     archiveGroupBtn.className = 'project-archive-btn';
     archiveGroupBtn.title = 'Archive all sessions';
@@ -490,6 +496,21 @@ function rebindSidebarEvents(projects) {
     if (settingsBtn) {
       settingsBtn.onclick = (e) => { e.stopPropagation(); openSettingsViewer('project', project.projectPath); };
     }
+    const collapseGroupsBtn = header.querySelector('.project-collapse-groups-btn');
+    if (collapseGroupsBtn) {
+      collapseGroupsBtn.onclick = (e) => {
+        e.stopPropagation();
+        const projectGroup = header.closest('.project-group');
+        if (!projectGroup) return;
+        const slugGroups = projectGroup.querySelectorAll('.slug-group');
+        const allCollapsed = [...slugGroups].every(g => g.classList.contains('collapsed'));
+        slugGroups.forEach(g => {
+          if (allCollapsed) g.classList.remove('collapsed');
+          else g.classList.add('collapsed');
+        });
+        saveExpandedSlugs();
+      };
+    }
     const archiveGroupBtn = header.querySelector('.project-archive-btn');
     if (archiveGroupBtn) {
       archiveGroupBtn.onclick = async (e) => {
@@ -510,7 +531,7 @@ function rebindSidebarEvents(projects) {
       };
     }
     header.onclick = (e) => {
-      if (e.target.closest('.project-new-btn') || e.target.closest('.project-archive-btn') || e.target.closest('.project-settings-btn') || e.target.closest('.project-schedule-btn')) return;
+      if (e.target.closest('.project-new-btn') || e.target.closest('.project-archive-btn') || e.target.closest('.project-settings-btn') || e.target.closest('.project-schedule-btn') || e.target.closest('.project-collapse-groups-btn')) return;
       header.classList.toggle('collapsed');
     };
   }

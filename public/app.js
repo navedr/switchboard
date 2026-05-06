@@ -41,6 +41,7 @@ const settingsViewer = document.getElementById('settings-viewer');
 const globalSettingsBtn = document.getElementById('global-settings-btn');
 const addProjectBtn = document.getElementById('add-project-btn');
 const resortBtn = document.getElementById('resort-btn');
+const collapseAllBtn = document.getElementById('collapse-all-btn');
 const jsonlViewer = document.getElementById('jsonl-viewer');
 const jsonlViewerTitle = document.getElementById('jsonl-viewer-title');
 const jsonlViewerSessionId = document.getElementById('jsonl-viewer-session-id');
@@ -408,6 +409,16 @@ resortBtn.addEventListener('click', () => {
 globalSettingsBtn.innerHTML = ICONS.gear(18);
 globalSettingsBtn.addEventListener('click', () => {
   openSettingsViewer('global');
+});
+
+// --- Collapse all folders ---
+collapseAllBtn.addEventListener('click', () => {
+  const headers = document.querySelectorAll('.project-header');
+  const allCollapsed = [...headers].every(h => h.classList.contains('collapsed'));
+  headers.forEach(h => {
+    if (allCollapsed) h.classList.remove('collapsed');
+    else h.classList.add('collapsed');
+  });
 });
 
 // --- Add project button ---

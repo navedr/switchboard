@@ -401,9 +401,11 @@ body { display: flex; flex-direction: column; }
   white-space: nowrap;
 }
 
+.project-collapse-groups-btn,
 .project-archive-btn,
 .project-new-btn {
   background: transparent;
+  border: none;
   color: #808098;
   font-size: 16px;
   width: 20px;
@@ -2600,6 +2602,7 @@ body { display: flex; flex-direction: column; }
 /* ========== ADD PROJECT BUTTON ========== */
 #grid-toggle-btn,
 #resort-btn,
+#collapse-all-btn,
 #add-project-btn {
   background: transparent;
   border: 1px solid rgba(255,255,255,0.08);
@@ -2621,10 +2624,12 @@ body { display: flex; flex-direction: column; }
 
 #grid-toggle-btn { margin-left: auto; }
 #resort-btn { margin-left: 2px; }
+#collapse-all-btn { margin-left: 2px; }
 #add-project-btn { margin-left: 2px; }
 
 #grid-toggle-btn:hover,
 #resort-btn:hover,
+#collapse-all-btn:hover,
 #add-project-btn:hover {
   background: rgba(255,255,255,0.04);
   border-color: rgba(255,255,255,0.12);
