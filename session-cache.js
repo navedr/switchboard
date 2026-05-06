@@ -163,21 +163,18 @@ function populateCacheFromFilesystem() {
   }
 }
 
-/** Ensure external providers have been scanned at least once */
-let _externalScanned = false;
+/** Re-scan external providers before each data request (debounced to 3s) */
+let _lastExternalScan = 0;
 function ensureExternalProviders() {
-  if (_externalScanned) return;
-  _externalScanned = true;
+  const now = Date.now();
+  if (now - _lastExternalScan < 3000) return;
+  _lastExternalScan = now;
   scanExternalProviders();
 }
 
 /** Build projects response from cached data */
 function buildProjectsFromCache(showArchived) {
   ensureExternalProviders();
-  const allRows = getAllCached();
-  const byProvider = {};
-  for (const r of allRows) { const p = r.provider || 'claude'; byProvider[p] = (byProvider[p] || 0) + 1; }
-  log.info(`[cache] buildProjectsFromCache: ${allRows.length} total sessions (${JSON.stringify(byProvider)})`);
   const metaMap = getAllMeta();
   const cachedRows = getAllCached();
   const global = getSetting('global') || {};
