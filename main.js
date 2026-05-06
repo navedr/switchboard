@@ -301,7 +301,8 @@ sessionCache.init({
   },
 });
 const { readSessionFile, readFolderFromFilesystem, refreshFolder, populateCacheFromFilesystem,
-        buildProjectsFromCache, notifyRendererProjectsChanged, sendStatus, populateCacheViaWorker } = sessionCache;
+        buildProjectsFromCache, notifyRendererProjectsChanged, sendStatus, populateCacheViaWorker,
+        scanExternalProviders } = sessionCache;
 
 
 // --- IPC: browse-folder ---
@@ -1413,6 +1414,13 @@ function startProjectsWatcher() {
     console.error('Failed to start projects watcher:', err);
   }
 }
+
+// --- Periodic external provider re-scan ---
+setInterval(() => {
+  const before = Date.now();
+  scanExternalProviders();
+  if (Date.now() - before > 10) notifyRendererProjectsChanged();
+}, 30000);
 
 // --- IPC: app version ---
 ipcMain.handle('get-app-version', () => app.getVersion());
