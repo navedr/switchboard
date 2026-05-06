@@ -1423,13 +1423,18 @@ function watchExternalProviderDBs() {
     path.join(os.homedir(), '.copilot', 'session-store.db'),
   ];
   let debounceTimer = null;
+  let lastSessionCount = 0;
   function onDbChange() {
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       debounceTimer = null;
-      scanExternalProviders();
-      notifyRendererProjectsChanged();
-    }, 2000);
+      const before = lastSessionCount;
+      const count = scanExternalProviders();
+      lastSessionCount = count;
+      if (count !== before) {
+        notifyRendererProjectsChanged();
+      }
+    }, 5000);
   }
   for (const dbPath of dbPaths) {
     if (!fs.existsSync(dbPath)) continue;

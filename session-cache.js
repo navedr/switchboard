@@ -380,6 +380,7 @@ function scanExternalProviders() {
     log.error('[scan] Copilot session scan failed:', err.message);
   }
   if (count > 0) log.info(`[scan] Indexed ${count} external provider sessions`);
+  return count;
 }
 
 module.exports = {
