@@ -174,6 +174,10 @@ function ensureExternalProviders() {
 /** Build projects response from cached data */
 function buildProjectsFromCache(showArchived) {
   ensureExternalProviders();
+  const allRows = getAllCached();
+  const byProvider = {};
+  for (const r of allRows) { const p = r.provider || 'claude'; byProvider[p] = (byProvider[p] || 0) + 1; }
+  log.info(`[cache] buildProjectsFromCache: ${allRows.length} total sessions (${JSON.stringify(byProvider)})`);
   const metaMap = getAllMeta();
   const cachedRows = getAllCached();
   const global = getSetting('global') || {};

@@ -152,7 +152,7 @@ const stmts = {
       messageCount = excluded.messageCount, slug = excluded.slug,
       provider = excluded.provider
   `),
-  cacheGetByFolder: db.prepare('SELECT sessionId, modified FROM session_cache WHERE folder = ?'),
+  cacheGetByFolder: db.prepare("SELECT sessionId, modified FROM session_cache WHERE folder = ? AND (provider = 'claude' OR provider IS NULL)"),
   cacheGetFolder: db.prepare('SELECT folder FROM session_cache WHERE sessionId = ?'),
   cacheGetSession: db.prepare('SELECT * FROM session_cache WHERE sessionId = ?'),
   cacheDeleteSession: db.prepare('DELETE FROM session_cache WHERE sessionId = ?'),
