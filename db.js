@@ -156,7 +156,7 @@ const stmts = {
   cacheGetFolder: db.prepare('SELECT folder FROM session_cache WHERE sessionId = ?'),
   cacheGetSession: db.prepare('SELECT * FROM session_cache WHERE sessionId = ?'),
   cacheDeleteSession: db.prepare('DELETE FROM session_cache WHERE sessionId = ?'),
-  cacheDeleteFolder: db.prepare('DELETE FROM session_cache WHERE folder = ?'),
+  cacheDeleteFolder: db.prepare("DELETE FROM session_cache WHERE folder = ? AND (provider = 'claude' OR provider IS NULL)"),
   // Cache meta statements
   metaGet: db.prepare('SELECT * FROM cache_meta WHERE folder = ?'),
   metaGetAll: db.prepare('SELECT * FROM cache_meta'),
