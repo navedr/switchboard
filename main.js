@@ -870,6 +870,18 @@ ipcMain.handle('get-shell-profiles', () => {
   return getShellProfiles();
 });
 
+ipcMain.handle('get-provider-meta', () => {
+  const { getAllProviders } = require('./providers');
+  return getAllProviders().map(p => ({
+    id: p.id, name: p.name, iconSvg: p.iconSvg,
+    supportsMcp: p.supportsMcp, supportsResume: p.supportsResume,
+    supportsFork: p.supportsFork, supportsSessionLogs: p.supportsSessionLogs,
+    approvalModes: p.getApprovalModes(),
+    dangerousMode: p.getDangerousMode(),
+    extraFields: p.getSettingsFields(),
+  }));
+});
+
 ipcMain.handle('get-effective-settings', (_event, projectPath) => {
   const global = getSetting('global') || {};
   const project = projectPath ? (getSetting('project:' + projectPath) || {}) : {};

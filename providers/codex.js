@@ -40,13 +40,14 @@ function getPathPrefix() {
 
 function buildCommand(sessionId, isNew, sessionOptions) {
   const pfx = getPathPrefix();
+  const noAlt = sessionOptions?.noAltScreen !== false ? ' --no-alt-screen' : '';
   let cmd;
   if (sessionOptions?.forkFrom) {
-    cmd = `${pfx}codex --no-alt-screen fork "${sessionOptions.forkFrom}"`;
+    cmd = `${pfx}codex${noAlt} fork "${sessionOptions.forkFrom}"`;
   } else if (isNew) {
-    cmd = `${pfx}codex --no-alt-screen`;
+    cmd = `${pfx}codex${noAlt}`;
   } else {
-    cmd = `${pfx}codex --no-alt-screen resume "${sessionId}"`;
+    cmd = `${pfx}codex${noAlt} resume "${sessionId}"`;
   }
 
   if (sessionOptions) {
@@ -67,6 +68,10 @@ function buildCommand(sessionId, isNew, sessionOptions) {
         cmd += ` --add-dir "${dir}"`;
       }
     }
+  }
+
+  if (sessionOptions?.appendSystemPrompt) {
+    console.warn('[codex] --append-system-prompt is not supported by Codex CLI, ignoring');
   }
 
   if (sessionOptions?.preLaunchCmd) {

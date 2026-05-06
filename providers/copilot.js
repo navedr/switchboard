@@ -8,7 +8,7 @@ function validateShellArg(value, name) {
 }
 
 function buildCommand(sessionId, isNew, sessionOptions) {
-  let cmd = isNew ? `copilot` : `copilot --resume "${sessionId}"`;
+  let cmd = isNew ? `copilot` : `copilot --resume=${sessionId}`;
 
   if (sessionOptions) {
     if (sessionOptions.dangerouslySkipPermissions) {
@@ -30,6 +30,10 @@ function buildCommand(sessionId, isNew, sessionOptions) {
         cmd += ` --add-dir "${dir}"`;
       }
     }
+  }
+
+  if (sessionOptions?.appendSystemPrompt) {
+    console.warn('[copilot] --append-system-prompt is not supported by Copilot CLI, ignoring');
   }
 
   if (sessionOptions?.preLaunchCmd) {

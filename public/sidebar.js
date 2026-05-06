@@ -17,11 +17,10 @@ function folderId(projectPath) {
   return 'project-' + projectPath.replace(/[^a-zA-Z0-9_-]/g, '_');
 }
 
-const PROVIDER_GROUP_ICONS = {
-  claude: '<svg width="14" height="14" viewBox="0 0 1200 1200" fill="#d97757" stroke="none"><path d="M 233.96 800.21 L 468.64 668.54 L 472.59 657.1 L 468.64 650.74 L 457.21 650.74 L 283.89 644.7 L 54.93 633.83 L 0 592.75 L 2.74 575.28 L 60.72 562.23 L 331.57 580.03 L 472.59 592.67 L 475.33 584.86 L 463.57 575.19 L 219.54 411.87 L 117.18 339.06 L 91.25 266.01 L 167.68 233.07 L 318.04 343.57 L 459.95 449.8 L 468.08 441.02 L 392.62 305.72 L 288.81 130.63 L 275.19 63.62 L 332.86 6.6 L 403.25 31.33 L 561.18 363.22 L 600.4 461.96 L 608.21 454.71 L 637.77 131.52 L 660.4 48.48 L 726.52 37.85 L 747.06 94.07 L 686.98 427.17 L 709.61 415.09 L 876.89 206.74 L 997.61 140.3 L 1035.38 196.43 L 859.01 462.77 L 823.41 535.81 L 974.66 504.72 L 1184.21 494.5 L 1172.46 554.34 L 788.94 641.88 L 789.26 646.39 L 979.81 655.41 L 1169.15 692.54 L 1188.72 748.43 L 1046.82 759.87 L 791.36 698.34 L 782.34 703.73 L 936.32 846.85 L 1067.44 991.49 L 1034.5 1011.7 L 786.85 811.49 L 780.48 819.95 L 919.09 1027.41 L 916.67 1098.6 L 853.29 1103.11 L 657.91 802.87 L 650.98 806.82 L 601.77 1186.15 L 535.33 1177.05 L 535.33 1066.55 L 584.54 800.13 L 592.43 766.63 L 514.23 865.37 L 320.05 1103.68 L 263.92 1093.37 L 287.11 1031.11 L 523.33 724.67 L 205.29 929.4 L 124.99 914.01 L 234.2 799.57 Z"/></svg>',
-  codex: '<svg width="14" height="14" viewBox="0 0 24 24"><path d="M12 2L3 7v10l9 5 9-5V7l-9-5z" fill="#10a37f" stroke="none"/></svg>',
-  copilot: '<svg width="14" height="14" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h-2v-2h2v2zm0-4h-2V7h2v6zm4 4h-2v-2h2v2zm0-4h-2V7h2v6z" fill="#8B5CF6" stroke="none"/></svg>',
-};
+function getProviderIcon(providerId) {
+  const prov = typeof PROVIDERS !== 'undefined' && PROVIDERS[providerId];
+  return prov ? prov.iconSvg : '';
+}
 
 function buildSlugGroup(slug, sessions, options) {
   const isProviderGroup = options?.isProviderGroup || false;
@@ -57,7 +56,7 @@ function buildSlugGroup(slug, sessions, options) {
   nameEl.className = 'slug-group-name';
   if (isProviderGroup) {
     const provId = sessions[0]?.provider || 'claude';
-    const icon = PROVIDER_GROUP_ICONS[provId];
+    const icon = getProviderIcon(provId);
     if (icon) {
       const iconSpan = document.createElement('span');
       iconSpan.className = 'provider-badge';
@@ -750,19 +749,14 @@ function buildSessionItem(session) {
     summaryEl.prepend(badge);
   } else {
     const prov = session.provider || 'claude';
-    const pbadge = document.createElement('span');
-    pbadge.className = 'provider-badge provider-' + prov;
-    if (prov === 'claude') {
-      pbadge.innerHTML = '<svg width="14" height="14" viewBox="0 0 1200 1200" fill="#d97757" stroke="none"><path d="M 233.96 800.21 L 468.64 668.54 L 472.59 657.1 L 468.64 650.74 L 457.21 650.74 L 283.89 644.7 L 54.93 633.83 L 0 592.75 L 2.74 575.28 L 60.72 562.23 L 331.57 580.03 L 472.59 592.67 L 475.33 584.86 L 463.57 575.19 L 219.54 411.87 L 117.18 339.06 L 91.25 266.01 L 167.68 233.07 L 318.04 343.57 L 459.95 449.8 L 468.08 441.02 L 392.62 305.72 L 288.81 130.63 L 275.19 63.62 L 332.86 6.6 L 403.25 31.33 L 561.18 363.22 L 600.4 461.96 L 608.21 454.71 L 637.77 131.52 L 660.4 48.48 L 726.52 37.85 L 747.06 94.07 L 686.98 427.17 L 709.61 415.09 L 876.89 206.74 L 997.61 140.3 L 1035.38 196.43 L 859.01 462.77 L 823.41 535.81 L 974.66 504.72 L 1184.21 494.5 L 1172.46 554.34 L 788.94 641.88 L 789.26 646.39 L 979.81 655.41 L 1169.15 692.54 L 1188.72 748.43 L 1046.82 759.87 L 791.36 698.34 L 782.34 703.73 L 936.32 846.85 L 1067.44 991.49 L 1034.5 1011.7 L 786.85 811.49 L 780.48 819.95 L 919.09 1027.41 L 916.67 1098.6 L 853.29 1103.11 L 657.91 802.87 L 650.98 806.82 L 601.77 1186.15 L 535.33 1177.05 L 535.33 1066.55 L 584.54 800.13 L 592.43 766.63 L 514.23 865.37 L 320.05 1103.68 L 263.92 1093.37 L 287.11 1031.11 L 523.33 724.67 L 205.29 929.4 L 124.99 914.01 L 234.2 799.57 Z"/></svg>';
-      pbadge.title = 'Claude';
-    } else if (prov === 'codex') {
-      pbadge.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24"><path d="M12 2L3 7v10l9 5 9-5V7l-9-5z" fill="#10a37f" stroke="none"/></svg>';
-      pbadge.title = 'Codex';
-    } else if (prov === 'copilot') {
-      pbadge.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h-2v-2h2v2zm0-4h-2V7h2v6zm4 4h-2v-2h2v2zm0-4h-2V7h2v6z" fill="#8B5CF6" stroke="none"/></svg>';
-      pbadge.title = 'Copilot';
+    const icon = getProviderIcon(prov);
+    if (icon) {
+      const pbadge = document.createElement('span');
+      pbadge.className = 'provider-badge provider-' + prov;
+      pbadge.innerHTML = icon;
+      pbadge.title = prov.charAt(0).toUpperCase() + prov.slice(1);
+      summaryEl.prepend(pbadge);
     }
-    summaryEl.prepend(pbadge);
   }
   info.appendChild(summaryEl);
   info.appendChild(idEl);
