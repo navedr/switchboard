@@ -195,8 +195,15 @@ function renderProjects(projects, resort) {
 
     // When multiple providers exist in a project, group by provider;
     // otherwise use the existing slug grouping
-    const providerSet = new Set(filtered.map(s => s.provider || 'claude'));
-    const hasMultipleProviders = providerSet.size > 1;
+    // Only enable provider grouping when multiple providers have sessions with content
+    const providerCounts = {};
+    for (const s of filtered) {
+      const p = s.provider || 'claude';
+      if (s.messageCount > 0 || activePtyIds.has(s.sessionId) || pendingSessions.has(s.sessionId)) {
+        providerCounts[p] = (providerCounts[p] || 0) + 1;
+      }
+    }
+    const hasMultipleProviders = Object.keys(providerCounts).length > 1;
 
     const slugMap = new Map();
     const ungrouped = [];

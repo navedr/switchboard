@@ -218,6 +218,38 @@ const toolRenderers = {
       + escapeHtml(desc);
     return toolBlock('#f0a050', 'Agent', summary, null);
   },
+
+  // Codex tools
+  exec_command(input) {
+    const cmd = input.command || input.cmd || (typeof input === 'string' ? input : JSON.stringify(input));
+    const pre = document.createElement('pre');
+    pre.className = 'jsonl-tool-cmd-block';
+    pre.textContent = typeof cmd === 'string' ? cmd : JSON.stringify(cmd);
+    return toolBlock('#10a37f', 'exec_command', null, pre);
+  },
+
+  // Copilot tools
+  grep(input) {
+    const pattern = input.pattern || '';
+    const path = input.path || '';
+    const sp = path ? shortPath(path) : '';
+    const summary = '<code>' + escapeHtml(pattern) + (sp ? ' in ' + escapeHtml(sp) : '') + '</code>';
+    return toolBlock('#8B5CF6', 'grep', summary, null);
+  },
+  view(input) {
+    const path = input.path || '';
+    let range = '';
+    if (input.view_range) range = ':' + input.view_range.join('-');
+    return toolBlock('#8B5CF6', 'view', '<code>' + escapeHtml(shortPath(path) + range) + '</code>', null);
+  },
+  edit_file(input) {
+    const path = input.path || input.file_path || '';
+    return toolBlock('#8B5CF6', 'edit_file', '<code>' + escapeHtml(shortPath(path)) + '</code>', null);
+  },
+  report_intent(input) {
+    const intent = input.intent || '';
+    return toolBlock('#8B5CF6', 'intent', escapeHtml(intent), null);
+  },
 };
 
 // Render a local command (! prefix) as a tool block

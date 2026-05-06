@@ -930,21 +930,68 @@ ipcMain.handle('rename-session', (_event, sessionId, name) => {
 
 // --- IPC: archive-session ---
 ipcMain.handle('read-session-jsonl', (_event, sessionId) => {
-  const folder = getCachedFolder(sessionId);
-  if (!folder) return { error: 'Session not found in cache' };
-  const jsonlPath = path.join(PROJECTS_DIR, folder, sessionId + '.jsonl');
+  const cached = getCachedSession(sessionId);
+  if (!cached) return { error: 'Session not found in cache' };
+  const provider = cached.provider || 'claude';
+
+  let jsonlPath;
+  if (provider === 'codex') {
+    jsonlPath = resolveCodexJsonlPath(sessionId);
+  } else if (provider === 'copilot') {
+    jsonlPath = path.join(os.homedir(), '.copilot', 'session-state', sessionId, 'events.jsonl');
+  } else {
+    jsonlPath = path.join(PROJECTS_DIR, cached.folder, sessionId + '.jsonl');
+  }
+
+  if (!jsonlPath || !fs.existsSync(jsonlPath)) {
+    return { error: `JSONL file not found for ${provider} session` };
+  }
+
   try {
     const content = fs.readFileSync(jsonlPath, 'utf-8');
-    const entries = [];
+    const rawEntries = [];
     for (const line of content.split('\n')) {
       if (!line.trim()) continue;
-      try { entries.push(JSON.parse(line)); } catch {}
+      try { rawEntries.push(JSON.parse(line)); } catch {}
     }
-    return { entries };
+    // Normalize non-Claude entries to Claude-compatible format
+    let entries;
+    if (provider === 'codex') {
+      const { adaptCodexEntries } = require('./format-adapters');
+      entries = adaptCodexEntries(rawEntries);
+    } else if (provider === 'copilot') {
+      const { adaptCopilotEntries } = require('./format-adapters');
+      entries = adaptCopilotEntries(rawEntries);
+    } else {
+      entries = rawEntries;
+    }
+    return { entries, provider };
   } catch (err) {
     return { error: err.message };
   }
 });
+
+function resolveCodexJsonlPath(sessionId) {
+  const Database = require('better-sqlite3');
+  const dbPath = path.join(os.homedir(), '.codex', 'state_5.sqlite');
+  if (!fs.existsSync(dbPath)) return null;
+  try {
+    const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+    const row = db.prepare('SELECT rollout_path FROM threads WHERE id = ?').get(sessionId);
+    db.close();
+    if (row?.rollout_path) {
+      const fullPath = path.join(os.homedir(), '.codex', row.rollout_path);
+      if (fs.existsSync(fullPath)) return fullPath;
+    }
+  } catch {}
+  // Fallback: search sessions directory
+  const sessionsDir = path.join(os.homedir(), '.codex', 'sessions');
+  try {
+    const files = require('child_process').execFileSync('find', [sessionsDir, '-name', `*${sessionId}*`, '-type', 'f'], { encoding: 'utf8' }).trim().split('\n');
+    if (files[0]) return files[0];
+  } catch {}
+  return null;
+}
 
 ipcMain.handle('archive-session', (_event, sessionId, archived) => {
   const val = archived ? 1 : 0;
@@ -1183,9 +1230,17 @@ ipcMain.handle('open-terminal', async (_event, sessionId, projectPath, isNew, se
       }
     }
 
-    // Standalone BEL (not part of an OSC sequence)
+    // Standalone BEL (not part of an OSC sequence) — for non-Claude providers,
+    // BEL often signals the agent finished working and needs attention
     if (data.includes('\x07') && !data.includes('\x1b]')) {
       log.info(`[BEL] session=${currentId}`);
+      if (session._cliBusy && session.providerId !== 'claude') {
+        session._cliBusy = false;
+        log.info(`[BEL] session=${currentId} → IDLE (non-Claude provider)`);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('cli-busy-state', currentId, false);
+        }
+      }
     }
 
     // Track alternate screen mode (only if data contains the marker)
