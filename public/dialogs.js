@@ -43,10 +43,14 @@ const PROVIDERS = {
     name: 'Copilot',
     iconSvg: '<svg class="popover-option-icon copilot-icon" width="16" height="16" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h-2v-2h2v2zm0-4h-2V7h2v6zm4 4h-2v-2h2v2zm0-4h-2V7h2v6z" fill="#8B5CF6" stroke="none"/></svg>',
     approvalModes: [
-      { value: null, label: 'Default', desc: 'Use trusted folders configuration' },
+      { value: null, label: 'Default', desc: 'Interactive mode with permission prompts' },
+      { value: 'autopilot', label: 'Autopilot', desc: 'Run autonomously without asking questions' },
+      { value: 'plan', label: 'Plan', desc: 'Plan changes without executing' },
     ],
-    dangerousMode: null,
-    extraFields: [],
+    dangerousMode: { value: 'dangerouslySkipPermissions', label: 'YOLO', desc: 'Enable all permissions (tools, paths, URLs)' },
+    extraFields: [
+      { id: 'allowAllTools', type: 'toggle', label: 'Allow All Tools', desc: 'Auto-approve all tool executions' },
+    ],
   },
 };
 

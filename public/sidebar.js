@@ -181,7 +181,7 @@ function renderProjects(projects, resort) {
       });
     }
     const anyFilterActive = showStarredOnly || showRunningOnly || showTodayOnly || searchMatchIds !== null;
-    if (filtered.length === 0 && !project._projectMatchedOnly && (project.sessions.length > 0 || anyFilterActive)) return null;
+    if (filtered.length === 0 && !project._projectMatchedOnly) return null;
 
     // Sort
     filtered = [...filtered].sort((a, b) => {
