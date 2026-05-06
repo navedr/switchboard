@@ -163,13 +163,11 @@ function populateCacheFromFilesystem() {
   }
 }
 
-/** Re-scan external providers periodically (every 30s) */
-let _lastExternalScan = 0;
-const EXTERNAL_SCAN_INTERVAL = 30000;
+/** Ensure external providers have been scanned at least once */
+let _externalScanned = false;
 function ensureExternalProviders() {
-  const now = Date.now();
-  if (now - _lastExternalScan < EXTERNAL_SCAN_INTERVAL) return;
-  _lastExternalScan = now;
+  if (_externalScanned) return;
+  _externalScanned = true;
   scanExternalProviders();
 }
 

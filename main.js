@@ -1415,12 +1415,35 @@ function startProjectsWatcher() {
   }
 }
 
-// --- Periodic external provider re-scan ---
-setInterval(() => {
-  const before = Date.now();
-  scanExternalProviders();
-  if (Date.now() - before > 10) notifyRendererProjectsChanged();
-}, 30000);
+// --- Watch external provider DBs for new sessions ---
+function watchExternalProviderDBs() {
+  const watchers = [];
+  const dbPaths = [
+    path.join(os.homedir(), '.codex', 'state_5.sqlite'),
+    path.join(os.homedir(), '.copilot', 'session-store.db'),
+  ];
+  let debounceTimer = null;
+  function onDbChange() {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      debounceTimer = null;
+      scanExternalProviders();
+      notifyRendererProjectsChanged();
+    }, 2000);
+  }
+  for (const dbPath of dbPaths) {
+    if (!fs.existsSync(dbPath)) continue;
+    try {
+      watchers.push(fs.watch(dbPath, onDbChange));
+      const walPath = dbPath + '-wal';
+      if (fs.existsSync(walPath)) watchers.push(fs.watch(walPath, onDbChange));
+    } catch (err) {
+      log.error(`[watch] Failed to watch ${dbPath}: ${err.message}`);
+    }
+  }
+  return watchers;
+}
+const externalDbWatchers = watchExternalProviderDBs();
 
 // --- IPC: app version ---
 ipcMain.handle('get-app-version', () => app.getVersion());
