@@ -82,7 +82,8 @@
     settingsViewerBody.innerHTML = `
     <div class="settings-form">
       <div class="settings-section">
-        <div class="settings-section-title">Claude CLI Options</div>
+        <div class="settings-section-title">CLI Agent Options</div>
+        <div class="settings-description" style="margin-bottom:12px">These settings apply to the default provider for new sessions.</div>
 
         <div class="settings-field">
           <div class="settings-field-info">

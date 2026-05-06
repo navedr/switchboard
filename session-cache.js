@@ -163,8 +163,17 @@ function populateCacheFromFilesystem() {
   }
 }
 
+/** Ensure external providers have been scanned at least once */
+let _externalScanned = false;
+function ensureExternalProviders() {
+  if (_externalScanned) return;
+  _externalScanned = true;
+  scanExternalProviders();
+}
+
 /** Build projects response from cached data */
 function buildProjectsFromCache(showArchived) {
+  ensureExternalProviders();
   const metaMap = getAllMeta();
   const cachedRows = getAllCached();
   const global = getSetting('global') || {};
@@ -190,6 +199,7 @@ function buildProjectsFromCache(showArchived) {
       name: meta?.name || null,
       starred: meta?.starred || 0,
       archived: meta?.archived || 0,
+      provider: row.provider || 'claude',
     };
     if (!showArchived && s.archived) continue;
     projectMap.get(row.folder).sessions.push(s);
@@ -315,6 +325,9 @@ function populateCacheViaWorker() {
       setFolderMeta(folder, projectPath, indexMtimeMs);
     }
 
+    // Scan Codex and Copilot sessions after Claude scan completes
+    scanExternalProviders();
+
     populatingCache = false;
     sendStatus(`Indexed ${sessionCount} sessions across ${msg.results.length} projects`, 'done');
     // Clear status after a few seconds
@@ -342,6 +355,33 @@ function populateCacheViaWorker() {
   });
 }
 
+function scanExternalProviders() {
+  let count = 0;
+  try {
+    const { scanCodexSessions } = require('./codex-session-scanner');
+    const codexSessions = scanCodexSessions();
+    log.info(`[scan] Codex: found ${codexSessions.length} sessions`);
+    if (codexSessions.length > 0) {
+      upsertCachedSessions(codexSessions);
+      count += codexSessions.length;
+    }
+  } catch (err) {
+    log.error('[scan] Codex session scan failed:', err.message);
+  }
+  try {
+    const { scanCopilotSessions } = require('./copilot-session-scanner');
+    const copilotSessions = scanCopilotSessions();
+    log.info(`[scan] Copilot: found ${copilotSessions.length} sessions`);
+    if (copilotSessions.length > 0) {
+      upsertCachedSessions(copilotSessions);
+      count += copilotSessions.length;
+    }
+  } catch (err) {
+    log.error('[scan] Copilot session scan failed:', err.message);
+  }
+  if (count > 0) log.info(`[scan] Indexed ${count} external provider sessions`);
+}
+
 module.exports = {
   init,
   readSessionFile,
@@ -352,4 +392,5 @@ module.exports = {
   notifyRendererProjectsChanged,
   sendStatus,
   populateCacheViaWorker,
+  scanExternalProviders,
 };

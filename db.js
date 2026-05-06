@@ -48,7 +48,8 @@ db.exec(`
     created TEXT,
     modified TEXT,
     messageCount INTEGER DEFAULT 0,
-    slug TEXT
+    slug TEXT,
+    provider TEXT DEFAULT 'claude'
   )
 `);
 
@@ -67,9 +68,13 @@ db.exec(`
   )
 `);
 
+// Migration: add provider column to existing databases (must run before index creation)
+try { db.exec("ALTER TABLE session_cache ADD COLUMN provider TEXT DEFAULT 'claude'"); } catch {}
+
 // Index for fast folder lookups
 db.exec('CREATE INDEX IF NOT EXISTS idx_session_cache_folder ON session_cache(folder)');
 db.exec('CREATE INDEX IF NOT EXISTS idx_session_cache_slug ON session_cache(slug)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_session_cache_provider ON session_cache(provider)');
 
 // --- Migrations ---
 // Each migration runs once, in order. Add new migrations to the end.
@@ -138,13 +143,14 @@ const stmts = {
   cacheCount: db.prepare('SELECT COUNT(*) as cnt FROM session_cache'),
   cacheGetAll: db.prepare('SELECT * FROM session_cache'),
   cacheUpsert: db.prepare(`
-    INSERT INTO session_cache (sessionId, folder, projectPath, summary, firstPrompt, created, modified, messageCount, slug)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO session_cache (sessionId, folder, projectPath, summary, firstPrompt, created, modified, messageCount, slug, provider)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(sessionId) DO UPDATE SET
       folder = excluded.folder, projectPath = excluded.projectPath,
       summary = excluded.summary, firstPrompt = excluded.firstPrompt,
       created = excluded.created, modified = excluded.modified,
-      messageCount = excluded.messageCount, slug = excluded.slug
+      messageCount = excluded.messageCount, slug = excluded.slug,
+      provider = excluded.provider
   `),
   cacheGetByFolder: db.prepare('SELECT sessionId, modified FROM session_cache WHERE folder = ?'),
   cacheGetFolder: db.prepare('SELECT folder FROM session_cache WHERE sessionId = ?'),
@@ -231,7 +237,7 @@ const upsertCachedSessionsBatch = db.transaction((sessions) => {
     stmts.cacheUpsert.run(
       s.sessionId, s.folder, s.projectPath, s.summary,
       s.firstPrompt, s.created, s.modified, s.messageCount || 0,
-      s.slug || null
+      s.slug || null, s.provider || 'claude'
     );
   }
 });

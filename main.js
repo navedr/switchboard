@@ -28,6 +28,7 @@ const cleanPtyEnv = Object.fromEntries(
 // Shell profiles → shell-profiles.js
 const { discoverShellProfiles, getShellProfiles, resolveShell, isWindows, isWslShell, windowsToWslPath, shellArgs } = require('./shell-profiles');
 const { startScheduler } = require('./schedule-runner');
+const { getProvider } = require('./providers');
 
 
 
@@ -108,14 +109,7 @@ function isAllowedMemoryPath(filePath) {
   return false;
 }
 
-// --- Input sanitization for shell command arguments ---
-const SHELL_META_CHARS = /[;&|`$(){}!#\n\r]/;
-function validateShellArg(value, fieldName) {
-  if (!value) return;
-  if (SHELL_META_CHARS.test(value)) {
-    throw new Error(`${fieldName} contains invalid characters`);
-  }
-}
+// validateShellArg moved to providers/*.js — each provider validates its own args
 
 // Active PTY sessions
 const activeSessions = new Map();
@@ -1081,86 +1075,41 @@ ipcMain.handle('open-terminal', async (_event, sessionId, projectPath, isNew, se
         }
       }, 300);
     } else {
-      // Build claude command with session options
-      let claudeCmd;
-      if (sessionOptions?.forkFrom) {
-        claudeCmd = `claude --resume "${sessionOptions.forkFrom}" --fork-session`;
-      } else if (isNew) {
-        claudeCmd = `claude --session-id "${sessionId}"`;
-      } else {
-        claudeCmd = `claude --resume "${sessionId}"`;
-      }
+      // Build CLI command via provider abstraction
+      const providerId = sessionOptions?.provider || 'claude';
+      const provider = getProvider(providerId);
+      let agentCmd = provider.buildCommand(sessionId, isNew, sessionOptions);
+      log.info(`[pty] Launching provider=${providerId} cmd="${agentCmd}" cwd=${projectPath}`);
 
-      if (sessionOptions) {
-        if (sessionOptions.dangerouslySkipPermissions) {
-          claudeCmd += ' --dangerously-skip-permissions';
-        } else if (sessionOptions.permissionMode) {
-          validateShellArg(sessionOptions.permissionMode, 'permissionMode');
-          claudeCmd += ` --permission-mode "${sessionOptions.permissionMode}"`;
-        }
-        if (sessionOptions.worktree) {
-          claudeCmd += ' --worktree';
-          if (sessionOptions.worktreeName) {
-            validateShellArg(sessionOptions.worktreeName, 'worktreeName');
-            claudeCmd += ` "${sessionOptions.worktreeName}"`;
-          }
-        }
-        if (sessionOptions.chrome) {
-          claudeCmd += ' --chrome';
-        }
-        if (sessionOptions.addDirs) {
-          const dirs = sessionOptions.addDirs.split(',').map(d => d.trim()).filter(Boolean);
-          for (const dir of dirs) {
-            validateShellArg(dir, 'addDirs');
-            claudeCmd += ` --add-dir "${dir}"`;
-          }
-        }
-      }
-
-      if (sessionOptions?.appendSystemPrompt) {
-        // Write to a temp file and use shell substitution to avoid quoting issues
-        const tmpPrompt = path.join(os.tmpdir(), `switchboard-prompt-${sessionId}.md`);
-        fs.writeFileSync(tmpPrompt, sessionOptions.appendSystemPrompt);
-        claudeCmd += ` --append-system-prompt "$(cat '${tmpPrompt}')"`;
-      }
-
-      if (sessionOptions?.preLaunchCmd) {
-        claudeCmd = sessionOptions.preLaunchCmd + ' ' + claudeCmd;
-      }
-
-      // Start MCP server for this session so Claude CLI sends diffs/file opens to Switchboard
-      // (skip if user disabled IDE emulation in global settings)
-      if (sessionOptions?.mcpEmulation !== false) {
+      // Start MCP server if provider supports it and user hasn't disabled IDE emulation
+      if (provider.supportsMcp && sessionOptions?.mcpEmulation !== false) {
         try {
           mcpServer = await startMcpServer(sessionId, [projectPath], mainWindow, log);
-          claudeCmd += ' --ide';
+          agentCmd += ' --ide';
         } catch (err) {
           log.error(`[mcp] Failed to start MCP server for ${sessionId}: ${err.message}`);
         }
       }
 
+      const providerEnv = provider.getEnvVars(mcpServer);
       const ptyEnv = {
         ...cleanPtyEnv,
         TERM: 'xterm-256color', COLORTERM: 'truecolor',
         TERM_PROGRAM: 'iTerm.app', TERM_PROGRAM_VERSION: '3.6.6', FORCE_COLOR: '3', ITERM_SESSION_ID: '1',
+        ...providerEnv,
       };
-      if (mcpServer) {
-        ptyEnv.CLAUDE_CODE_SSE_PORT = String(mcpServer.port);
-      }
 
-      ptyProcess = pty.spawn(shell, shellArgs(shell, claudeCmd, shellExtraArgs), {
+      ptyProcess = pty.spawn(shell, shellArgs(shell, agentCmd, shellExtraArgs), {
         name: 'xterm-256color',
         cols: 120,
         rows: 30,
         cwd: isWsl ? os.homedir() : projectPath,
-        // TERM_PROGRAM=iTerm.app: Claude Code checks this to decide whether to emit
-        // OSC 9 notifications (e.g. "needs your attention"). Without it, the packaged
-        // app's minimal Electron environment won't trigger those sequences.
         env: ptyEnv,
       });
 
     }
   } catch (err) {
+    log.error(`[pty] Error spawning PTY for ${sessionId}: ${err.message}`);
     return { ok: false, error: `Error spawning PTY: ${err.message}` };
   }
 
@@ -1170,6 +1119,7 @@ ipcMain.handle('open-terminal', async (_event, sessionId, projectPath, isNew, se
     projectPath, firstResize: true,
     projectFolder, knownJsonlFiles, sessionSlug,
     isPlainTerminal, forkFrom: sessionOptions?.forkFrom || null,
+    providerId: sessionOptions?.provider || 'claude',
     mcpServer, _openedAt: Date.now(),
   };
   activeSessions.set(sessionId, session);
@@ -1265,6 +1215,7 @@ ipcMain.handle('open-terminal', async (_event, sessionId, projectPath, isNew, se
   });
 
   ptyProcess.onExit(({ exitCode }) => {
+    log.info(`[pty] Session ${sessionId} exited with code ${exitCode} (provider=${session.providerId})`);
     session.exited = true;
     // Clean up MCP server
     const mcpId = session.realSessionId || sessionId;
@@ -1290,7 +1241,7 @@ ipcMain.handle('open-terminal', async (_event, sessionId, projectPath, isNew, se
     log.info(`[fork-spawn] tempId=${sessionId} forkFrom=${sessionOptions.forkFrom} folder=${projectFolder} knownFiles=${knownJsonlFiles.size}`);
   }
 
-  return { ok: true, reattached: false, mcpActive: !!mcpServer };
+  return { ok: true, reattached: false, mcpActive: !!mcpServer, providerId: sessionOptions?.provider || 'claude' };
 });
 
 // --- IPC: terminal-input (fire-and-forget) ---

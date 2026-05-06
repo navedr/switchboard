@@ -706,6 +706,7 @@ async function launchNewSession(project, sessionOptions) {
     messageCount: 0,
     modified: new Date().toISOString(),
     created: new Date().toISOString(),
+    provider: sessionOptions?.provider || 'claude',
   };
 
   // Track as pending (no .jsonl yet)
@@ -791,8 +792,10 @@ async function openSession(session, customOptions) {
   // Create new terminal entry (hidden until showSession)
   const entry = createTerminalEntry(session);
 
-  // Open terminal in main process
-  const resumeOptions = customOptions || await resolveDefaultSessionOptions({ projectPath });
+  // Open terminal in main process — pass the session's provider for correct command building
+  const providerId = session.provider || 'claude';
+  const resumeOptions = customOptions || await resolveDefaultSessionOptions({ projectPath }, providerId);
+  if (!resumeOptions.provider) resumeOptions.provider = providerId;
   const result = await window.api.openTerminal(sessionId, projectPath, false, resumeOptions);
   if (!result.ok) {
     entry.terminal.write(`\r\nError: ${result.error}\r\n`);
