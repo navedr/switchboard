@@ -7,7 +7,7 @@ const CLAUDE_SVG_PATH = 'M 233.959793 800.214905 L 468.644287 668.536987 L 472.5
 const iconSvg = `<svg width="16" height="16" viewBox="0 0 1200 1200" fill="#d97757" stroke="none"><path d="${CLAUDE_SVG_PATH}"/></svg>`;
 
 function validateShellArg(value, name) {
-  if (/[;&|`$(){}]/.test(value)) throw new Error(`Invalid characters in ${name}`);
+  if (/[;&|`$(){}!#\n\r]/.test(value)) throw new Error(`Invalid characters in ${name}`);
 }
 
 function buildCommand(sessionId, isNew, sessionOptions) {

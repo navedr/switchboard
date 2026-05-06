@@ -4,7 +4,7 @@ const os = require('os');
 const iconSvg = `<svg width="16" height="16" viewBox="0 0 24 24"><path d="M12 2L3 7v10l9 5 9-5V7l-9-5z" fill="#10a37f" stroke="none"/></svg>`;
 
 function validateShellArg(value, name) {
-  if (/[;&|`$(){}]/.test(value)) throw new Error(`Invalid characters in ${name}`);
+  if (/[;&|`$(){}!#\n\r]/.test(value)) throw new Error(`Invalid characters in ${name}`);
 }
 
 const isWindows = process.platform === 'win32';

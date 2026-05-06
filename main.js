@@ -973,6 +973,7 @@ ipcMain.handle('read-session-jsonl', (_event, sessionId) => {
 });
 
 function resolveCodexJsonlPath(sessionId) {
+  if (!/^[0-9a-f-]+$/i.test(sessionId)) return null;
   const Database = require('better-sqlite3');
   const dbPath = path.join(os.homedir(), '.codex', 'state_5.sqlite');
   if (!fs.existsSync(dbPath)) return null;
@@ -985,11 +986,18 @@ function resolveCodexJsonlPath(sessionId) {
       if (fs.existsSync(fullPath)) return fullPath;
     }
   } catch {}
-  // Fallback: search sessions directory
+  // Fallback: walk sessions directory (cross-platform, no shell)
   const sessionsDir = path.join(os.homedir(), '.codex', 'sessions');
   try {
-    const files = require('child_process').execFileSync('find', [sessionsDir, '-name', `*${sessionId}*`, '-type', 'f'], { encoding: 'utf8' }).trim().split('\n');
-    if (files[0]) return files[0];
+    const walkDir = (dir) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) { const r = walkDir(full); if (r) return r; }
+        else if (entry.name.includes(sessionId) && entry.name.endsWith('.jsonl')) return full;
+      }
+      return null;
+    };
+    return walkDir(sessionsDir);
   } catch {}
   return null;
 }

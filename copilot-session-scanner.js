@@ -71,11 +71,11 @@ function scanCopilotSessions() {
         };
       });
 
-    db.close();
     return sessions;
-  } catch (err) {
-    try { if (db) db.close(); } catch {}
+  } catch {
     return [];
+  } finally {
+    if (db) try { db.close(); } catch {}
   }
 }
 
