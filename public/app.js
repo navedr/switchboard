@@ -88,7 +88,7 @@ const pendingSessions = new Map(); // sessionId → { session, projectPath, fold
 // Bridge functions for settings-panel.js
 window._setVisibleSessionCount = (v) => { visibleSessionCount = v; };
 window._setSessionMaxAge = (v) => { sessionMaxAgeDays = v; };
-window._setGroupByProvider = (v) => { console.log('[settings] groupByProvider =', v); groupByProvider = v; refreshSidebar(); };
+window._setGroupByProvider = (v) => { groupByProvider = v; refreshSidebar(); };
 window._applyTerminalTheme = (themeName) => {
   currentThemeName = themeName;
   TERMINAL_THEME = getTerminalTheme();

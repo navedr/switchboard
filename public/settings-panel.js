@@ -286,6 +286,16 @@
       });
     });
 
+    // Instant-apply: group by provider toggle
+    const groupToggle = settingsViewerBody.querySelector('#sv-group-by-provider');
+    if (groupToggle) {
+      groupToggle.addEventListener('change', () => {
+        if (typeof window._setGroupByProvider === 'function') {
+          window._setGroupByProvider(groupToggle.checked);
+        }
+      });
+    }
+
     // Save button
     settingsViewerBody.querySelector('#sv-save-btn').addEventListener('click', async () => {
       let settings = {};
