@@ -863,6 +863,7 @@ const SETTING_DEFAULTS = {
   terminalTheme: 'switchboard',
   mcpEmulation: false,
   shellProfile: 'auto',
+  groupByProvider: true,
 };
 
 ipcMain.handle('get-shell-profiles', () => {

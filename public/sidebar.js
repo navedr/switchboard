@@ -202,7 +202,7 @@ function renderProjects(projects, resort) {
         providerCounts[p] = (providerCounts[p] || 0) + 1;
       }
     }
-    const hasMultipleProviders = Object.keys(providerCounts).length > 1;
+    const hasMultipleProviders = groupByProvider && Object.keys(providerCounts).length > 1;
 
     const slugMap = new Map();
     const ungrouped = [];

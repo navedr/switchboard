@@ -82,11 +82,13 @@ let activeTab = 'sessions';
 let cachedPlans = [];
 let visibleSessionCount = 10;
 let sessionMaxAgeDays = 3;
+let groupByProvider = true;
 const pendingSessions = new Map(); // sessionId → { session, projectPath, folder }
 
 // Bridge functions for settings-panel.js
 window._setVisibleSessionCount = (v) => { visibleSessionCount = v; };
 window._setSessionMaxAge = (v) => { sessionMaxAgeDays = v; };
+window._setGroupByProvider = (v) => { groupByProvider = v; refreshSidebar(); };
 window._applyTerminalTheme = (themeName) => {
   currentThemeName = themeName;
   TERMINAL_THEME = getTerminalTheme();
@@ -1031,6 +1033,9 @@ setTimeout(() => {
     }
     if (global.sessionMaxAgeDays) {
       sessionMaxAgeDays = global.sessionMaxAgeDays;
+    }
+    if (global.groupByProvider !== undefined) {
+      groupByProvider = global.groupByProvider;
     }
     if (global.terminalTheme && TERMINAL_THEMES[global.terminalTheme]) {
       currentThemeName = global.terminalTheme;

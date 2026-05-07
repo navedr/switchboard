@@ -74,6 +74,7 @@
     const themeValue = fieldValue('terminalTheme', 'switchboard');
     const mcpEmulationValue = fieldValue('mcpEmulation', true);
     const shellProfileValue = fieldValue('shellProfile', 'auto');
+    const groupByProviderValue = fieldValue('groupByProvider', true);
 
     // Discover available shell profiles
     let shellProfiles = [];
@@ -235,6 +236,16 @@
             <label class="settings-toggle"><input type="checkbox" id="sv-mcp-emulation" ${mcpEmulationValue ? 'checked' : ''}><span class="settings-toggle-slider"></span></label>
           </div>
         </div>
+
+        <div class="settings-field">
+          <div class="settings-field-info">
+            <span class="settings-label">Group by Provider</span>
+            <div class="settings-description">Group sessions by provider (Claude, Codex, Copilot) when a project has sessions from multiple agents</div>
+          </div>
+          <div class="settings-field-control">
+            <label class="settings-toggle"><input type="checkbox" id="sv-group-by-provider" ${groupByProviderValue ? 'checked' : ''}><span class="settings-toggle-slider"></span></label>
+          </div>
+        </div>
       </div>` : ''}
 
       ${!isProject ? `<div class="settings-section">
@@ -307,6 +318,7 @@
         settings.terminalTheme = settingsViewerBody.querySelector('#sv-terminal-theme').value || 'switchboard';
         settings.mcpEmulation = settingsViewerBody.querySelector('#sv-mcp-emulation').checked;
         settings.shellProfile = settingsViewerBody.querySelector('#sv-shell-profile').value || 'auto';
+        settings.groupByProvider = settingsViewerBody.querySelector('#sv-group-by-provider').checked;
       }
 
       // Merge form values into existing settings to preserve keys not managed by the form
@@ -327,6 +339,9 @@
         }
         if (settings.terminalTheme && typeof window._applyTerminalTheme === 'function') {
           window._applyTerminalTheme(settings.terminalTheme);
+        }
+        if (settings.groupByProvider !== undefined && typeof window._setGroupByProvider === 'function') {
+          window._setGroupByProvider(settings.groupByProvider);
         }
         if (typeof refreshSidebar === 'function') refreshSidebar();
       }
