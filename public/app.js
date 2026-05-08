@@ -88,7 +88,12 @@ const pendingSessions = new Map(); // sessionId → { session, projectPath, fold
 // Bridge functions for settings-panel.js
 window._setVisibleSessionCount = (v) => { visibleSessionCount = v; };
 window._setSessionMaxAge = (v) => { sessionMaxAgeDays = v; };
-window._setGroupByProvider = (v) => { groupByProvider = v; loadProjects({ resort: true }); };
+window._setGroupByProvider = (v) => {
+  groupByProvider = v;
+  const sc = document.getElementById('sidebar-content');
+  while (sc.firstChild) sc.removeChild(sc.firstChild);
+  loadProjects({ resort: true });
+};
 window._applyTerminalTheme = (themeName) => {
   currentThemeName = themeName;
   TERMINAL_THEME = getTerminalTheme();
