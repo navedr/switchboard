@@ -212,8 +212,12 @@ function renderProjects(projects, resort) {
         if (!slugMap.has(prov)) slugMap.set(prov, []);
         slugMap.get(prov).push(session);
       } else if (session.slug) {
-        if (!slugMap.has(session.slug)) slugMap.set(session.slug, []);
-        slugMap.get(session.slug).push(session);
+        // When provider grouping is off, prefix slug with provider to avoid
+        // mixing Claude and Copilot sessions in the same slug group
+        const prov = session.provider || 'claude';
+        const slugKey = (prov !== 'claude') ? prov + ':' + session.slug : session.slug;
+        if (!slugMap.has(slugKey)) slugMap.set(slugKey, []);
+        slugMap.get(slugKey).push(session);
       } else {
         ungrouped.push(session);
       }
