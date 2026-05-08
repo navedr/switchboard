@@ -88,7 +88,7 @@ const pendingSessions = new Map(); // sessionId → { session, projectPath, fold
 // Bridge functions for settings-panel.js
 window._setVisibleSessionCount = (v) => { visibleSessionCount = v; };
 window._setSessionMaxAge = (v) => { sessionMaxAgeDays = v; };
-window._setGroupByProvider = (v) => { groupByProvider = v; document.title = 'groupByProvider=' + v; refreshSidebar(); };
+window._setGroupByProvider = (v) => { groupByProvider = v; loadProjects({ resort: true }); };
 window._applyTerminalTheme = (themeName) => {
   currentThemeName = themeName;
   TERMINAL_THEME = getTerminalTheme();
@@ -638,6 +638,11 @@ function dedup(projects) {
 }
 
 async function loadProjects({ resort = false } = {}) {
+  // Re-read groupByProvider from persisted settings
+  try {
+    const g = await window.api.getSetting('global');
+    if (g && g.groupByProvider !== undefined) groupByProvider = g.groupByProvider;
+  } catch {}
   const wasEmpty = cachedProjects.length === 0;
   if (wasEmpty) {
     loadingStatus.textContent = 'Loading\u2026';
