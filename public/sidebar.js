@@ -211,8 +211,6 @@ function renderProjects(projects, resort) {
         const prov = session.provider || 'claude';
         if (!slugMap.has(prov)) slugMap.set(prov, []);
         slugMap.get(prov).push(session);
-      } else if (!groupByProvider) {
-        ungrouped.push(session);
       } else if (session.slug) {
         if (!slugMap.has(session.slug)) slugMap.set(session.slug, []);
         slugMap.get(session.slug).push(session);
