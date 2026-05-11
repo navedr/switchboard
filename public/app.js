@@ -643,11 +643,6 @@ function dedup(projects) {
 }
 
 async function loadProjects({ resort = false } = {}) {
-  // Re-read groupByProvider from persisted settings
-  try {
-    const g = await window.api.getSetting('global');
-    if (g && g.groupByProvider !== undefined) groupByProvider = g.groupByProvider;
-  } catch {}
   const wasEmpty = cachedProjects.length === 0;
   if (wasEmpty) {
     loadingStatus.textContent = 'Loading\u2026';
