@@ -260,6 +260,8 @@ function getCachedSession(sessionId) {
 }
 
 function deleteCachedSession(sessionId) {
+  const row = stmts.cacheGetSession.get(sessionId);
+  if (row && row.provider && row.provider !== 'claude') return;
   stmts.cacheDeleteSession.run(sessionId);
 }
 
