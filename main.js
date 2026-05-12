@@ -159,9 +159,9 @@ function createWindow() {
 
   mainWindow.loadFile(path.join(__dirname, 'public', 'index.html'));
 
-  // Open external links in the system browser instead of a child BrowserWindow
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//i.test(url)) shell.openExternal(url).catch(() => {});
+  // Deny child BrowserWindow creation — links are handled by the overridden
+  // window.open (xterm WebLinksAddon) and will-navigate handler below
+  mainWindow.webContents.setWindowOpenHandler(() => {
     return { action: 'deny' };
   });
   mainWindow.webContents.on('will-navigate', (event, url) => {
