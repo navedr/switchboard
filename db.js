@@ -267,7 +267,9 @@ const stmts = {
     bookmarksBySession: db.prepare(
         "SELECT id, sessionId, turnIndex, note, created FROM session_bookmarks WHERE sessionId = ? ORDER BY turnIndex",
     ),
-    allBookmarks: db.prepare("SELECT id, sessionId, turnIndex, note, created FROM session_bookmarks ORDER BY created DESC"),
+    allBookmarks: db.prepare(
+        "SELECT id, sessionId, turnIndex, note, created FROM session_bookmarks ORDER BY created DESC",
+    ),
     addBookmark: db.prepare("INSERT OR REPLACE INTO session_bookmarks (sessionId, turnIndex, note) VALUES (?, ?, ?)"),
     removeBookmark: db.prepare("DELETE FROM session_bookmarks WHERE id = ?"),
     updateBookmarkNote: db.prepare("UPDATE session_bookmarks SET note = ? WHERE id = ?"),
@@ -527,6 +529,11 @@ function deleteSetting(key) {
     stmts.settingsDelete.run(key);
 }
 
+function runInTransaction(fn) {
+    const wrapped = db.transaction(fn);
+    return wrapped();
+}
+
 function closeDb() {
     try {
         db.close();
@@ -573,5 +580,6 @@ module.exports = {
     getSetting,
     setSetting,
     deleteSetting,
+    runInTransaction,
     closeDb,
 };

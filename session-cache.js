@@ -14,6 +14,7 @@ let PROJECTS_DIR, activeSessions, getMainWindow, log;
 let deleteCachedFolder, getCachedByFolder, upsertCachedSessions, deleteCachedSession;
 let deleteSearchFolder, deleteSearchSession, upsertSearchEntries;
 let setFolderMeta, getAllFolderMeta, getAllMeta, getAllCached, getSetting, getMeta, setName;
+let runInTransaction;
 
 function init(ctx) {
     PROJECTS_DIR = ctx.PROJECTS_DIR;
@@ -35,6 +36,7 @@ function init(ctx) {
     getSetting = ctx.db.getSetting;
     getMeta = ctx.db.getMeta;
     setName = ctx.db.setName;
+    runInTransaction = ctx.db.runInTransaction;
 }
 
 // readSessionFile is imported from read-session-file.js (shared with worker)
@@ -137,26 +139,26 @@ function refreshFolder(folder) {
         }
     }
 
-    // Batch all DB writes to reduce lock contention
-    if (sessionsToUpsert.length > 0) {
-        upsertCachedSessions(sessionsToUpsert);
-    }
-    for (const entry of searchEntriesToUpsert) {
-        deleteSearchSession(entry.id);
-    }
-    if (searchEntriesToUpsert.length > 0) {
-        upsertSearchEntries(searchEntriesToUpsert);
-    }
-    for (const { id, name } of namesToSet) {
-        setName(id, name);
-    }
-    for (const sessionId of sessionsToDelete) {
-        deleteCachedSession(sessionId);
-        deleteSearchSession(sessionId);
-    }
-
-    // Update folder mtime
-    setFolderMeta(folder, projectPath, getFolderIndexMtimeMs(folderPath));
+    // Single transaction for all DB writes to avoid SQLITE_BUSY from WAL contention
+    runInTransaction(() => {
+        if (sessionsToUpsert.length > 0) {
+            upsertCachedSessions(sessionsToUpsert);
+        }
+        for (const entry of searchEntriesToUpsert) {
+            deleteSearchSession(entry.id);
+        }
+        if (searchEntriesToUpsert.length > 0) {
+            upsertSearchEntries(searchEntriesToUpsert);
+        }
+        for (const { id, name } of namesToSet) {
+            setName(id, name);
+        }
+        for (const sessionId of sessionsToDelete) {
+            deleteCachedSession(sessionId);
+            deleteSearchSession(sessionId);
+        }
+        setFolderMeta(folder, projectPath, getFolderIndexMtimeMs(folderPath));
+    });
 }
 
 /** Populate entire cache from filesystem (cold start) */
