@@ -267,6 +267,7 @@ const stmts = {
     bookmarksBySession: db.prepare(
         "SELECT id, sessionId, turnIndex, note, created FROM session_bookmarks WHERE sessionId = ? ORDER BY turnIndex",
     ),
+    allBookmarks: db.prepare("SELECT id, sessionId, turnIndex, note, created FROM session_bookmarks ORDER BY created DESC"),
     addBookmark: db.prepare("INSERT OR REPLACE INTO session_bookmarks (sessionId, turnIndex, note) VALUES (?, ?, ?)"),
     removeBookmark: db.prepare("DELETE FROM session_bookmarks WHERE id = ?"),
     updateBookmarkNote: db.prepare("UPDATE session_bookmarks SET note = ? WHERE id = ?"),
@@ -489,6 +490,10 @@ function getBookmarks(sessionId) {
     return stmts.bookmarksBySession.all(sessionId);
 }
 
+function getAllBookmarks() {
+    return stmts.allBookmarks.all();
+}
+
 function addBookmark(sessionId, turnIndex, note) {
     stmts.addBookmark.run(sessionId, turnIndex, note || null);
     return getBookmarks(sessionId);
@@ -561,6 +566,7 @@ module.exports = {
     upsertTagDefinition,
     deleteTagDefinition,
     getBookmarks,
+    getAllBookmarks,
     addBookmark,
     removeBookmark,
     updateBookmarkNote,

@@ -109,6 +109,7 @@ const {
     upsertTagDefinition,
     deleteTagDefinition,
     getBookmarks,
+    getAllBookmarks,
     addBookmark,
     removeBookmark,
     updateBookmarkNote,
@@ -1153,6 +1154,7 @@ ipcMain.handle("delete-tag-definition", (_event, tag) => {
 
 // --- IPC: session bookmarks ---
 ipcMain.handle("get-bookmarks", (_event, sessionId) => getBookmarks(sessionId));
+ipcMain.handle("get-all-bookmarks", () => getAllBookmarks());
 ipcMain.handle("add-bookmark", (_event, sessionId, turnIndex, note) => addBookmark(sessionId, turnIndex, note));
 ipcMain.handle("remove-bookmark", (_event, id) => {
     removeBookmark(id);

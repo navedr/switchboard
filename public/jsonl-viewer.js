@@ -633,7 +633,13 @@ async function showJsonlViewer(session) {
     const displayName = session.name || session.summary || session.sessionId;
     jsonlViewerTitle.textContent = displayName;
     jsonlViewerSessionId.textContent = session.sessionId;
-    jsonlViewerBody.innerHTML = "";
+    while (jsonlViewerBody.firstChild) jsonlViewerBody.removeChild(jsonlViewerBody.firstChild);
+
+    // Remove previous bookmarks drawer if any
+    const oldDrawer = jsonlViewer.querySelector(".bookmarks-drawer");
+    if (oldDrawer) oldDrawer.remove();
+    const oldToggle = jsonlViewer.querySelector(".bookmarks-toggle-btn");
+    if (oldToggle) oldToggle.remove();
 
     if (result.error) {
         jsonlViewerBody.innerHTML =
@@ -676,12 +682,27 @@ async function showJsonlViewer(session) {
                 el.dataset.turnIndex = turnIndex;
                 if (bookmarkedTurns.has(turnIndex)) el.classList.add("bookmarked");
 
+                // Extract prompt preview from entry content
+                const blocks = entry.message?.content || entry.content;
+                let promptPreview = "";
+                if (typeof blocks === "string") {
+                    promptPreview = blocks.slice(0, 120);
+                } else if (Array.isArray(blocks)) {
+                    for (const b of blocks) {
+                        if (b.type === "text" && b.text) {
+                            promptPreview = b.text.slice(0, 120);
+                            break;
+                        }
+                    }
+                }
+
                 // Add bookmark button
                 const bmBtn = document.createElement("button");
                 bmBtn.className = "jsonl-bookmark-btn";
                 bmBtn.textContent = bookmarkedTurns.has(turnIndex) ? "★" : "☆";
                 bmBtn.title = bookmarkedTurns.has(turnIndex) ? "Remove bookmark" : "Bookmark this turn";
                 const ti = turnIndex;
+                const preview = promptPreview;
                 bmBtn.addEventListener("click", async () => {
                     if (bookmarkedTurns.has(ti)) {
                         const bm = bookmarks.find(b => b.turnIndex === ti);
@@ -691,7 +712,7 @@ async function showJsonlViewer(session) {
                         bmBtn.textContent = "☆";
                         bmBtn.title = "Bookmark this turn";
                     } else {
-                        bookmarks = await window.api.addBookmark(session.sessionId, ti, null);
+                        bookmarks = await window.api.addBookmark(session.sessionId, ti, preview);
                         bookmarkedTurns.add(ti);
                         el.classList.add("bookmarked");
                         bmBtn.textContent = "★";
@@ -729,4 +750,49 @@ async function showJsonlViewer(session) {
 
     // Scroll to the bottom so the most recent messages are visible
     jsonlViewerBody.scrollTop = jsonlViewerBody.scrollHeight;
+
+    // Build bookmarks drawer if there are any
+    if (bookmarks.length > 0) {
+        const drawer = document.createElement("div");
+        drawer.className = "bookmarks-drawer";
+
+        const drawerTitle = document.createElement("div");
+        drawerTitle.className = "bookmarks-drawer-title";
+        drawerTitle.textContent = "Bookmarks (" + bookmarks.length + ")";
+        drawer.appendChild(drawerTitle);
+
+        for (const bm of bookmarks) {
+            const item = document.createElement("div");
+            item.className = "bookmark-item";
+
+            const label = document.createElement("div");
+            label.className = "bookmark-turn-label";
+            label.textContent = bm.note || "Turn " + bm.turnIndex;
+            item.appendChild(label);
+
+            const timeEl = document.createElement("div");
+            timeEl.className = "bookmark-time";
+            timeEl.textContent = formatDate(new Date(bm.created));
+            item.appendChild(timeEl);
+
+            item.addEventListener("click", () => {
+                const target = jsonlViewerBody.querySelector(`[data-turn-index="${bm.turnIndex}"]`);
+                if (target) target.scrollIntoView({ behavior: "smooth", block: "center" });
+            });
+            drawer.appendChild(item);
+        }
+
+        jsonlViewer.insertBefore(drawer, jsonlViewerBody);
+
+        // Toggle button in header
+        const toggleBtn = document.createElement("button");
+        toggleBtn.className = "bookmarks-toggle-btn";
+        toggleBtn.textContent = "★ " + bookmarks.length;
+        toggleBtn.title = "Toggle bookmarks drawer";
+        toggleBtn.addEventListener("click", () => {
+            drawer.classList.toggle("collapsed");
+        });
+        const header = jsonlViewer.querySelector("#jsonl-viewer-header");
+        if (header) header.appendChild(toggleBtn);
+    }
 }

@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld("api", {
 
     // Bookmarks
     getBookmarks: sessionId => ipcRenderer.invoke("get-bookmarks", sessionId),
+    getAllBookmarks: () => ipcRenderer.invoke("get-all-bookmarks"),
     addBookmark: (sessionId, turnIndex, note) => ipcRenderer.invoke("add-bookmark", sessionId, turnIndex, note),
     removeBookmark: id => ipcRenderer.invoke("remove-bookmark", id),
     updateBookmarkNote: (id, note) => ipcRenderer.invoke("update-bookmark-note", id, note),

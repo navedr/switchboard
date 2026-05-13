@@ -4357,3 +4357,122 @@ body {
 .jsonl-entry.bookmarked .jsonl-bookmark-btn {
     opacity: 0.8;
 }
+
+/* --- Bookmarks Drawer (inside JSONL viewer) --- */
+.bookmarks-drawer {
+    width: 200px;
+    min-width: 200px;
+    border-right: 1px solid #2a2a35;
+    overflow-y: auto;
+    flex-shrink: 0;
+    background: #15151c;
+    padding: 0;
+}
+.bookmarks-drawer.collapsed {
+    display: none;
+}
+.bookmarks-drawer-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #8088ff;
+    padding: 10px 12px 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.bookmark-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 12px;
+    border-bottom: 1px solid #1e1e28;
+    color: #aaa;
+}
+.bookmark-item:hover {
+    background: #2a2a35;
+    color: #e0e0e0;
+}
+.bookmark-turn-label {
+    font-weight: 500;
+    color: #ccc;
+    margin-bottom: 2px;
+}
+.bookmark-note {
+    color: #888;
+    font-size: 11px;
+    margin-bottom: 2px;
+}
+.bookmark-time {
+    color: #555;
+    font-size: 11px;
+}
+.bookmarks-toggle-btn {
+    background: none;
+    border: 1px solid #333;
+    border-radius: 6px;
+    color: #8088ff;
+    font-size: 12px;
+    padding: 2px 8px;
+    cursor: pointer;
+    margin-left: auto;
+}
+.bookmarks-toggle-btn:hover {
+    background: #2a2a35;
+}
+
+/* --- Bookmarks Sidebar Tab --- */
+#bookmarks-content {
+    overflow-y: auto;
+    flex: 1;
+    padding: 0;
+}
+.bookmark-group {
+    border-bottom: 1px solid #2a2a35;
+}
+.bookmark-group-header {
+    font-size: 13px;
+    font-weight: 500;
+    color: #ccc;
+    padding: 10px 12px 6px;
+    cursor: pointer;
+}
+.bookmark-group-header:hover {
+    color: #8088ff;
+}
+.bookmark-sidebar-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px 6px 20px;
+    cursor: pointer;
+    font-size: 12px;
+    color: #aaa;
+}
+.bookmark-sidebar-item:hover {
+    background: #2a2a35;
+    color: #e0e0e0;
+}
+.bookmark-sidebar-item .bookmark-turn-label {
+    font-weight: 500;
+    color: #ccc;
+    flex-shrink: 0;
+}
+.bookmark-sidebar-item .bookmark-time {
+    margin-left: auto;
+    flex-shrink: 0;
+}
+.bookmark-delete-btn {
+    background: none;
+    border: none;
+    color: #555;
+    font-size: 14px;
+    cursor: pointer;
+    padding: 0 4px;
+    opacity: 0;
+    transition: opacity 0.12s;
+}
+.bookmark-sidebar-item:hover .bookmark-delete-btn {
+    opacity: 0.7;
+}
+.bookmark-delete-btn:hover {
+    color: #e05070;
+    opacity: 1 !important;
+}

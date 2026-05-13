@@ -100,6 +100,86 @@ let sessionTagsMap = {};
 let tagDefinitions = [];
 let filterByTag = null;
 
+// Bookmarks sidebar
+const bookmarksContent = document.getElementById("bookmarks-content");
+
+async function loadGlobalBookmarks() {
+    if (!bookmarksContent) return;
+    while (bookmarksContent.firstChild) bookmarksContent.removeChild(bookmarksContent.firstChild);
+
+    let allBookmarks;
+    try {
+        allBookmarks = await window.api.getAllBookmarks();
+    } catch {
+        return;
+    }
+
+    if (!allBookmarks || allBookmarks.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "plans-empty";
+        empty.textContent = "No bookmarks yet. Open a session's message history and click ☆ to bookmark a turn.";
+        bookmarksContent.appendChild(empty);
+        return;
+    }
+
+    // Group by sessionId
+    const grouped = new Map();
+    for (const bm of allBookmarks) {
+        if (!grouped.has(bm.sessionId)) grouped.set(bm.sessionId, []);
+        grouped.get(bm.sessionId).push(bm);
+    }
+
+    for (const [sessionId, bms] of grouped) {
+        const session = sessionMap.get(sessionId);
+        const sessionName = session ? cleanDisplayName(session.name || session.summary) : sessionId.slice(0, 12);
+
+        const group = document.createElement("div");
+        group.className = "bookmark-group";
+
+        const header = document.createElement("div");
+        header.className = "bookmark-group-header";
+        header.textContent = sessionName + " (" + bms.length + ")";
+        header.addEventListener("click", () => {
+            if (session) showJsonlViewer(session);
+        });
+        group.appendChild(header);
+
+        for (const bm of bms) {
+            const item = document.createElement("div");
+            item.className = "bookmark-sidebar-item";
+
+            const label = document.createElement("span");
+            label.className = "bookmark-turn-label";
+            label.textContent = bm.note || "Turn " + bm.turnIndex;
+            item.appendChild(label);
+
+            const timeEl = document.createElement("span");
+            timeEl.className = "bookmark-time";
+            timeEl.textContent = formatDate(new Date(bm.created));
+            item.appendChild(timeEl);
+
+            item.addEventListener("click", () => {
+                if (session) showJsonlViewer(session);
+            });
+
+            const delBtn = document.createElement("button");
+            delBtn.className = "bookmark-delete-btn";
+            delBtn.textContent = "×";
+            delBtn.title = "Remove bookmark";
+            delBtn.addEventListener("click", async e => {
+                e.stopPropagation();
+                await window.api.removeBookmark(bm.id);
+                loadGlobalBookmarks();
+            });
+            item.appendChild(delBtn);
+
+            group.appendChild(item);
+        }
+
+        bookmarksContent.appendChild(group);
+    }
+}
+
 // Bridge functions for settings-panel.js
 window._setVisibleSessionCount = v => {
     visibleSessionCount = v;
@@ -886,6 +966,7 @@ document.querySelectorAll(".sidebar-tab").forEach(tab => {
         statsContent.style.display = "none";
         memoryContent.style.display = "none";
         fileTreeContent.style.display = "none";
+        bookmarksContent.style.display = "none";
         sessionFilters.style.display = "none";
         searchBar.style.display = "none";
 
@@ -940,6 +1021,9 @@ document.querySelectorAll(".sidebar-tab").forEach(tab => {
             if (typeof loadFileTree === "function" && session?.projectPath) {
                 loadFileTree(session.projectPath);
             }
+        } else if (tabName === "bookmarks") {
+            bookmarksContent.style.display = "";
+            loadGlobalBookmarks();
         }
     });
 });
