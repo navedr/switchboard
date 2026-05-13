@@ -367,6 +367,7 @@ sessionCache.init({
         deleteSearchSession,
         upsertSearchEntries,
         setFolderMeta,
+        getAllFolderMeta,
         getAllMeta,
         getAllCached,
         getSetting,

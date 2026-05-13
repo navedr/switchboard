@@ -12,7 +12,7 @@ const { readSessionFile } = require("./read-session-file");
 let PROJECTS_DIR, activeSessions, getMainWindow, log;
 let deleteCachedFolder, getCachedByFolder, upsertCachedSessions, deleteCachedSession;
 let deleteSearchFolder, deleteSearchSession, upsertSearchEntries;
-let setFolderMeta, getAllMeta, getAllCached, getSetting, getMeta, setName;
+let setFolderMeta, getAllFolderMeta, getAllMeta, getAllCached, getSetting, getMeta, setName;
 
 function init(ctx) {
     PROJECTS_DIR = ctx.PROJECTS_DIR;
@@ -28,6 +28,7 @@ function init(ctx) {
     deleteSearchSession = ctx.db.deleteSearchSession;
     upsertSearchEntries = ctx.db.upsertSearchEntries;
     setFolderMeta = ctx.db.setFolderMeta;
+    getAllFolderMeta = ctx.db.getAllFolderMeta;
     getAllMeta = ctx.db.getAllMeta;
     getAllCached = ctx.db.getAllCached;
     getSetting = ctx.db.getSetting;
@@ -190,13 +191,12 @@ function buildProjectsFromCache(showArchived) {
     const global = getSetting("global") || {};
     const hiddenProjects = new Set(global.hiddenProjects || []);
 
-    // Group by folder (worktree sessions appear as separate projects)
+    // Group by projectPath, not on-disk folder name — multiple folders can resolve
+    // to the same projectPath due to encoding changes over time.
     const projectMap = new Map();
     for (const row of cachedRows) {
+        if (!row.projectPath) continue;
         if (hiddenProjects.has(row.projectPath)) continue;
-        if (!projectMap.has(row.folder)) {
-            projectMap.set(row.folder, { folder: row.folder, projectPath: row.projectPath, sessions: [] });
-        }
         const meta = metaMap.get(row.sessionId);
         const s = {
             sessionId: row.sessionId,
@@ -213,20 +213,36 @@ function buildProjectsFromCache(showArchived) {
             provider: row.provider || "claude",
         };
         if (!showArchived && s.archived) continue;
-        projectMap.get(row.folder).sessions.push(s);
+        if (!projectMap.has(row.projectPath)) {
+            projectMap.set(row.projectPath, {
+                folder: encodeProjectPath(row.projectPath),
+                projectPath: row.projectPath,
+                sessions: [],
+            });
+        }
+        projectMap.get(row.projectPath).sessions.push(s);
     }
 
     // Include empty project directories (no sessions yet)
     try {
+        const folderMeta = getAllFolderMeta();
         const dirs = fs
             .readdirSync(PROJECTS_DIR, { withFileTypes: true })
             .filter(d => d.isDirectory() && d.name !== ".git");
         for (const d of dirs) {
-            if (!projectMap.has(d.name)) {
-                const projectPath = deriveProjectPath(path.join(PROJECTS_DIR, d.name), d.name);
-                if (projectPath && !hiddenProjects.has(projectPath)) {
-                    projectMap.set(d.name, { folder: d.name, projectPath, sessions: [] });
-                }
+            let projectPath = folderMeta.get(d.name)?.projectPath;
+            if (!projectPath) {
+                projectPath = deriveProjectPath(path.join(PROJECTS_DIR, d.name), d.name);
+                if (projectPath) setFolderMeta(d.name, projectPath, 0);
+            }
+            if (!projectPath) continue;
+            if (hiddenProjects.has(projectPath)) continue;
+            if (!projectMap.has(projectPath)) {
+                projectMap.set(projectPath, {
+                    folder: encodeProjectPath(projectPath),
+                    projectPath,
+                    sessions: [],
+                });
             }
         }
     } catch {}
@@ -234,12 +250,16 @@ function buildProjectsFromCache(showArchived) {
     // Inject active plain terminal sessions so they participate in sorting
     for (const [sessionId, session] of activeSessions) {
         if (session.exited || !session.isPlainTerminal) continue;
-        const folder = session.projectPath.replace(/[\\/:_]/g, "-").replace(/^-/, "-");
+        if (!session.projectPath) continue;
         if (hiddenProjects.has(session.projectPath)) continue;
-        if (!projectMap.has(folder)) {
-            projectMap.set(folder, { folder, projectPath: session.projectPath, sessions: [] });
+        if (!projectMap.has(session.projectPath)) {
+            projectMap.set(session.projectPath, {
+                folder: encodeProjectPath(session.projectPath),
+                projectPath: session.projectPath,
+                sessions: [],
+            });
         }
-        const proj = projectMap.get(folder);
+        const proj = projectMap.get(session.projectPath);
         if (!proj.sessions.some(s => s.sessionId === sessionId)) {
             proj.sessions.push({
                 sessionId,
