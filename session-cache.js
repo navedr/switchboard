@@ -4,6 +4,7 @@ const { Worker } = require("worker_threads");
 const { getFolderIndexMtimeMs } = require("./folder-index-state");
 const { deriveProjectPath } = require("./derive-project-path");
 const { readSessionFile } = require("./read-session-file");
+const { encodeProjectPath } = require("./encode-project-path");
 
 /**
  * Session cache module.
