@@ -6,269 +6,284 @@
 // Provider metadata loaded from main process (single source of truth)
 let PROVIDERS = {};
 async function loadProviderMeta() {
-  try {
-    const metas = await window.api.getProviderMeta();
-    for (const m of metas) {
-      PROVIDERS[m.id] = {
-        id: m.id, name: m.name, iconSvg: m.iconSvg,
-        approvalModes: m.approvalModes,
-        dangerousMode: m.dangerousMode,
-        extraFields: (m.extraFields || []).map(f => ({ id: f.key, ...f })),
-      };
+    try {
+        const metas = await window.api.getProviderMeta();
+        for (const m of metas) {
+            PROVIDERS[m.id] = {
+                id: m.id,
+                name: m.name,
+                iconSvg: m.iconSvg,
+                approvalModes: m.approvalModes,
+                dangerousMode: m.dangerousMode,
+                extraFields: (m.extraFields || []).map(f => ({ id: f.key, ...f })),
+            };
+        }
+    } catch (err) {
+        console.error("Failed to load provider metadata:", err);
     }
-  } catch (err) {
-    console.error('Failed to load provider metadata:', err);
-  }
 }
 loadProviderMeta();
 
 // --- New session dialog ---
-async function resolveDefaultSessionOptions(project, providerId = 'claude') {
-  const effective = await window.api.getEffectiveSettings(project.projectPath);
-  const options = { provider: providerId };
-  if (effective.dangerouslySkipPermissions) {
-    options.dangerouslySkipPermissions = true;
-  } else if (effective.permissionMode) {
-    options.permissionMode = effective.permissionMode;
-  }
-  if (effective.worktree) {
-    options.worktree = true;
-    if (effective.worktreeName) options.worktreeName = effective.worktreeName;
-  }
-  if (effective.chrome) options.chrome = true;
-  if (effective.preLaunchCmd) options.preLaunchCmd = effective.preLaunchCmd;
-  if (effective.addDirs) options.addDirs = effective.addDirs;
-  if (effective.mcpEmulation === false) options.mcpEmulation = false;
-  return options;
+async function resolveDefaultSessionOptions(project, providerId = "claude") {
+    const effective = await window.api.getEffectiveSettings(project.projectPath);
+    const options = { provider: providerId };
+    if (effective.dangerouslySkipPermissions) {
+        options.dangerouslySkipPermissions = true;
+    } else if (effective.permissionMode) {
+        options.permissionMode = effective.permissionMode;
+    }
+    if (effective.worktree) {
+        options.worktree = true;
+        if (effective.worktreeName) options.worktreeName = effective.worktreeName;
+    }
+    if (effective.chrome) options.chrome = true;
+    if (effective.preLaunchCmd) options.preLaunchCmd = effective.preLaunchCmd;
+    if (effective.addDirs) options.addDirs = effective.addDirs;
+    if (effective.mcpEmulation === false) options.mcpEmulation = false;
+    return options;
 }
 
 async function forkSession(session, project) {
-  const providerId = session.provider || 'claude';
-  const options = await resolveDefaultSessionOptions(project, providerId);
-  options.forkFrom = session.sessionId;
-  options.provider = providerId;
-  launchNewSession(project, options);
+    const providerId = session.provider || "claude";
+    const options = await resolveDefaultSessionOptions(project, providerId);
+    options.forkFrom = session.sessionId;
+    options.provider = providerId;
+    launchNewSession(project, options);
 }
 
 async function launchScheduleCreator(project) {
-  const options = await resolveDefaultSessionOptions(project);
-  // Pre-create a JSONL session with the schedule creation prompt, then resume into it
-  const result = await window.api.createScheduleSession(project.projectPath);
-  if (!result || !result.sessionId) return;
+    const options = await resolveDefaultSessionOptions(project);
+    // Pre-create a JSONL session with the schedule creation prompt, then resume into it
+    const result = await window.api.createScheduleSession(project.projectPath);
+    if (!result || !result.sessionId) return;
 
-  const session = {
-    sessionId: result.sessionId,
-    summary: 'Create scheduled task',
-    firstPrompt: '',
-    projectPath: project.projectPath,
-    name: null,
-    starred: 0,
-    archived: 0,
-    messageCount: 1,
-    modified: new Date().toISOString(),
-    created: new Date().toISOString(),
-  };
+    const session = {
+        sessionId: result.sessionId,
+        summary: "Create scheduled task",
+        firstPrompt: "",
+        projectPath: project.projectPath,
+        name: null,
+        starred: 0,
+        archived: 0,
+        messageCount: 1,
+        modified: new Date().toISOString(),
+        created: new Date().toISOString(),
+    };
 
-  // Inject into sidebar
-  const folder = project.projectPath.replace(/[\\/:_]/g, '-').replace(/^-/, '-');
-  pendingSessions.set(result.sessionId, { session, projectPath: project.projectPath, folder });
-  sessionMap.set(result.sessionId, session);
-  for (const projList of [cachedProjects, cachedAllProjects]) {
-    let proj = projList.find(p => p.projectPath === project.projectPath);
-    if (!proj) {
-      proj = { folder, projectPath: project.projectPath, sessions: [] };
-      projList.unshift(proj);
+    // Inject into sidebar
+    const folder = project.projectPath.replace(/[\\/:_]/g, "-").replace(/^-/, "-");
+    pendingSessions.set(result.sessionId, { session, projectPath: project.projectPath, folder });
+    sessionMap.set(result.sessionId, session);
+    for (const projList of [cachedProjects, cachedAllProjects]) {
+        let proj = projList.find(p => p.projectPath === project.projectPath);
+        if (!proj) {
+            proj = { folder, projectPath: project.projectPath, sessions: [] };
+            projList.unshift(proj);
+        }
+        proj.sessions.unshift(session);
     }
-    proj.sessions.unshift(session);
-  }
-  refreshSidebar();
+    refreshSidebar();
 
-  const entry = createTerminalEntry(session);
-  // Resume the pre-seeded session
-  options.appendSystemPrompt = result.systemPrompt;
-  const openResult = await window.api.openTerminal(result.sessionId, project.projectPath, false, options);
-  if (!openResult.ok) {
-    entry.terminal.write(`\r\nError: ${openResult.error}\r\n`);
-    entry.closed = true;
-    return;
-  }
-  if (typeof setSessionMcpActive === 'function') setSessionMcpActive(result.sessionId, !!openResult.mcpActive);
-  showSession(result.sessionId);
-  pollActiveSessions();
+    const entry = createTerminalEntry(session);
+    // Resume the pre-seeded session
+    options.appendSystemPrompt = result.systemPrompt;
+    const openResult = await window.api.openTerminal(result.sessionId, project.projectPath, false, options);
+    if (!openResult.ok) {
+        entry.terminal.write(`\r\nError: ${openResult.error}\r\n`);
+        entry.closed = true;
+        return;
+    }
+    if (typeof setSessionMcpActive === "function") setSessionMcpActive(result.sessionId, !!openResult.mcpActive);
+    showSession(result.sessionId);
+    pollActiveSessions();
 }
 
 function showNewSessionPopover(project, anchorEl) {
-  // Remove any existing popover
-  document.querySelectorAll('.new-session-popover').forEach(el => el.remove());
+    // Remove any existing popover
+    document.querySelectorAll(".new-session-popover").forEach(el => el.remove());
 
-  const popover = document.createElement('div');
-  popover.className = 'new-session-popover';
+    const popover = document.createElement("div");
+    popover.className = "new-session-popover";
 
-  function makeProviderBtn(provider, label, onClick) {
-    const btn = document.createElement('button');
-    btn.className = 'popover-option';
-    btn.innerHTML = provider.iconSvg;
-    btn.appendChild(document.createTextNode(' ' + label));
-    btn.onclick = onClick;
-    return btn;
-  }
-
-  for (const provider of Object.values(PROVIDERS)) {
-    popover.appendChild(makeProviderBtn(provider, provider.name, async () => {
-      popover.remove();
-      const opts = await resolveDefaultSessionOptions(project, provider.id);
-      launchNewSession(project, opts);
-    }));
-    popover.appendChild(makeProviderBtn(provider, provider.name + ' (Configure...)', () => {
-      popover.remove();
-      showNewSessionDialog(project, provider.id);
-    }));
-  }
-
-  const termBtn = document.createElement('button');
-  termBtn.className = 'popover-option popover-option-terminal';
-  termBtn.innerHTML = '<svg class="popover-option-icon terminal-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg> Terminal';
-  termBtn.onclick = () => { popover.remove(); launchTerminalSession(project); };
-  popover.appendChild(termBtn);
-
-  // Position relative to anchor, flip upward if it would overflow
-  document.body.appendChild(popover);
-  const rect = anchorEl.getBoundingClientRect();
-  const popoverHeight = popover.offsetHeight;
-  if (rect.bottom + 4 + popoverHeight > window.innerHeight) {
-    popover.style.top = (rect.top - popoverHeight - 4) + 'px';
-  } else {
-    popover.style.top = (rect.bottom + 4) + 'px';
-  }
-  popover.style.left = rect.left + 'px';
-
-  // Close on click outside
-  function onClickOutside(e) {
-    if (!popover.contains(e.target) && e.target !== anchorEl) {
-      popover.remove();
-      document.removeEventListener('mousedown', onClickOutside);
+    function makeProviderBtn(provider, label, onClick) {
+        const btn = document.createElement("button");
+        btn.className = "popover-option";
+        btn.innerHTML = provider.iconSvg;
+        btn.appendChild(document.createTextNode(" " + label));
+        btn.onclick = onClick;
+        return btn;
     }
-  }
-  setTimeout(() => document.addEventListener('mousedown', onClickOutside), 0);
+
+    for (const provider of Object.values(PROVIDERS)) {
+        popover.appendChild(
+            makeProviderBtn(provider, provider.name, async () => {
+                popover.remove();
+                const opts = await resolveDefaultSessionOptions(project, provider.id);
+                launchNewSession(project, opts);
+            }),
+        );
+        popover.appendChild(
+            makeProviderBtn(provider, provider.name + " (Configure...)", () => {
+                popover.remove();
+                showNewSessionDialog(project, provider.id);
+            }),
+        );
+    }
+
+    const termBtn = document.createElement("button");
+    termBtn.className = "popover-option popover-option-terminal";
+    termBtn.innerHTML =
+        '<svg class="popover-option-icon terminal-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg> Terminal';
+    termBtn.onclick = () => {
+        popover.remove();
+        launchTerminalSession(project);
+    };
+    popover.appendChild(termBtn);
+
+    // Position relative to anchor, flip upward if it would overflow
+    document.body.appendChild(popover);
+    const rect = anchorEl.getBoundingClientRect();
+    const popoverHeight = popover.offsetHeight;
+    if (rect.bottom + 4 + popoverHeight > window.innerHeight) {
+        popover.style.top = rect.top - popoverHeight - 4 + "px";
+    } else {
+        popover.style.top = rect.bottom + 4 + "px";
+    }
+    popover.style.left = rect.left + "px";
+
+    // Close on click outside
+    function onClickOutside(e) {
+        if (!popover.contains(e.target) && e.target !== anchorEl) {
+            popover.remove();
+            document.removeEventListener("mousedown", onClickOutside);
+        }
+    }
+    setTimeout(() => document.addEventListener("mousedown", onClickOutside), 0);
 }
 
 async function launchTerminalSession(project) {
-  const sessionId = crypto.randomUUID();
-  const projectPath = project.projectPath;
-  const session = {
-    sessionId,
-    summary: 'Terminal',
-    firstPrompt: '',
-    projectPath,
-    name: null,
-    starred: 0,
-    archived: 0,
-    messageCount: 0,
-    modified: new Date().toISOString(),
-    created: new Date().toISOString(),
-    type: 'terminal',
-  };
+    const sessionId = crypto.randomUUID();
+    const projectPath = project.projectPath;
+    const session = {
+        sessionId,
+        summary: "Terminal",
+        firstPrompt: "",
+        projectPath,
+        name: null,
+        starred: 0,
+        archived: 0,
+        messageCount: 0,
+        modified: new Date().toISOString(),
+        created: new Date().toISOString(),
+        type: "terminal",
+    };
 
-  // Track as pending
-  const folder = projectPath.replace(/[\\/:_]/g, '-').replace(/^-/, '-');
-  pendingSessions.set(sessionId, { session, projectPath, folder });
+    // Track as pending
+    const folder = projectPath.replace(/[\\/:_]/g, "-").replace(/^-/, "-");
+    pendingSessions.set(sessionId, { session, projectPath, folder });
 
-  // Inject into cached project data
-  sessionMap.set(sessionId, session);
-  for (const projList of [cachedProjects, cachedAllProjects]) {
-    let proj = projList.find(p => p.projectPath === projectPath);
-    if (!proj) {
-      proj = { folder, projectPath, sessions: [] };
-      projList.unshift(proj);
+    // Inject into cached project data
+    sessionMap.set(sessionId, session);
+    for (const projList of [cachedProjects, cachedAllProjects]) {
+        let proj = projList.find(p => p.projectPath === projectPath);
+        if (!proj) {
+            proj = { folder, projectPath, sessions: [] };
+            projList.unshift(proj);
+        }
+        proj.sessions.unshift(session);
     }
-    proj.sessions.unshift(session);
-  }
-  refreshSidebar();
+    refreshSidebar();
 
-  const entry = createTerminalEntry(session);
+    const entry = createTerminalEntry(session);
 
-  const result = await window.api.openTerminal(sessionId, projectPath, true, { type: 'terminal' });
-  if (!result.ok) {
-    entry.terminal.write(`\r\nError: ${result.error}\r\n`);
-    entry.closed = true;
-    return;
-  }
+    const result = await window.api.openTerminal(sessionId, projectPath, true, { type: "terminal" });
+    if (!result.ok) {
+        entry.terminal.write(`\r\nError: ${result.error}\r\n`);
+        entry.closed = true;
+        return;
+    }
 
-  showSession(sessionId);
-  pollActiveSessions();
+    showSession(sessionId);
+    pollActiveSessions();
 }
 
-async function showNewSessionDialog(project, providerId = 'claude') {
-  const provider = PROVIDERS[providerId] || PROVIDERS.claude;
-  const effective = await window.api.getEffectiveSettings(project.projectPath);
+async function showNewSessionDialog(project, providerId = "claude") {
+    const provider = PROVIDERS[providerId] || PROVIDERS.claude;
+    const effective = await window.api.getEffectiveSettings(project.projectPath);
 
-  const overlay = document.createElement('div');
-  overlay.className = 'new-session-overlay';
+    const overlay = document.createElement("div");
+    overlay.className = "new-session-overlay";
 
-  const dialog = document.createElement('div');
-  dialog.className = 'new-session-dialog';
+    const dialog = document.createElement("div");
+    dialog.className = "new-session-dialog";
 
-  let selectedMode = effective.permissionMode || null;
-  let dangerousSkip = effective.dangerouslySkipPermissions || false;
+    let selectedMode = effective.permissionMode || null;
+    let dangerousSkip = effective.dangerouslySkipPermissions || false;
 
-  const modes = provider.approvalModes;
+    const modes = provider.approvalModes;
 
-  function renderModeGrid() {
-    let html = modes.map(m => {
-      const isSelected = !dangerousSkip && selectedMode === m.value;
-      return `<button class="permission-option${isSelected ? ' selected' : ''}" data-mode="${m.value}"><span class="perm-name">${escapeHtml(m.label)}</span><span class="perm-desc">${escapeHtml(m.desc)}</span></button>`;
-    }).join('');
-    if (provider.dangerousMode) {
-      html += `<button class="permission-option dangerous${dangerousSkip ? ' selected' : ''}" data-mode="dangerous-skip"><span class="perm-name">${escapeHtml(provider.dangerousMode.label)}</span><span class="perm-desc">${escapeHtml(provider.dangerousMode.desc)}</span></button>`;
+    function renderModeGrid() {
+        let html = modes
+            .map(m => {
+                const isSelected = !dangerousSkip && selectedMode === m.value;
+                return `<button class="permission-option${isSelected ? " selected" : ""}" data-mode="${m.value}"><span class="perm-name">${escapeHtml(m.label)}</span><span class="perm-desc">${escapeHtml(m.desc)}</span></button>`;
+            })
+            .join("");
+        if (provider.dangerousMode) {
+            html += `<button class="permission-option dangerous${dangerousSkip ? " selected" : ""}" data-mode="dangerous-skip"><span class="perm-name">${escapeHtml(provider.dangerousMode.label)}</span><span class="perm-desc">${escapeHtml(provider.dangerousMode.desc)}</span></button>`;
+        }
+        return html;
     }
-    return html;
-  }
 
-  function renderDependentInline(parentId) {
-    const dep = provider.extraFields.find(f => f.dependsOn === parentId && f.type === 'text');
-    if (!dep) return '';
-    const val = escapeHtml(effective[dep.id] || '');
-    const widthAttr = dep.width ? ` style="width:${dep.width}"` : '';
-    const placeholder = escapeHtml(dep.placeholder || '');
-    return `<input type="text" class="settings-input" id="nsd-${dep.id}" placeholder="${placeholder}" value="${val}"${widthAttr}>`;
-  }
+    function renderDependentInline(parentId) {
+        const dep = provider.extraFields.find(f => f.dependsOn === parentId && f.type === "text");
+        if (!dep) return "";
+        const val = escapeHtml(effective[dep.id] || "");
+        const widthAttr = dep.width ? ` style="width:${dep.width}"` : "";
+        const placeholder = escapeHtml(dep.placeholder || "");
+        return `<input type="text" class="settings-input" id="nsd-${dep.id}" placeholder="${placeholder}" value="${val}"${widthAttr}>`;
+    }
 
-  function renderExtraFieldsWithDeps() {
-    return provider.extraFields.filter(f => !f.dependsOn).map(f => {
-      if (f.type === 'toggle') {
-        const checked = effective[f.id] ? 'checked' : '';
-        const inlineDep = renderDependentInline(f.id);
-        return `<div class="settings-field">
+    function renderExtraFieldsWithDeps() {
+        return provider.extraFields
+            .filter(f => !f.dependsOn)
+            .map(f => {
+                if (f.type === "toggle") {
+                    const checked = effective[f.id] ? "checked" : "";
+                    const inlineDep = renderDependentInline(f.id);
+                    return `<div class="settings-field">
           <div class="settings-field-info">
             <span class="settings-label">${escapeHtml(f.label)}</span>
-            <div class="settings-description">${escapeHtml(f.desc || '')}</div>
+            <div class="settings-description">${escapeHtml(f.desc || "")}</div>
           </div>
           <div class="settings-field-control">
             ${inlineDep}
             <label class="settings-toggle"><input type="checkbox" id="nsd-${f.id}" ${checked}><span class="settings-toggle-slider"></span></label>
           </div>
         </div>`;
-      }
-      if (f.type === 'text') {
-        const val = escapeHtml(effective[f.id] || '');
-        const placeholder = escapeHtml(f.placeholder || '');
-        return `<div class="settings-field settings-field-wide">
+                }
+                if (f.type === "text") {
+                    const val = escapeHtml(effective[f.id] || "");
+                    const placeholder = escapeHtml(f.placeholder || "");
+                    return `<div class="settings-field settings-field-wide">
           <div class="settings-field-info">
             <span class="settings-label">${escapeHtml(f.label)}</span>
-            <div class="settings-description">${escapeHtml(f.desc || '')}</div>
+            <div class="settings-description">${escapeHtml(f.desc || "")}</div>
           </div>
           <div class="settings-field-control">
             <input type="text" class="settings-input" id="nsd-${f.id}" placeholder="${placeholder}" value="${val}">
           </div>
         </div>`;
-      }
-      return '';
-    }).join('');
-  }
+                }
+                return "";
+            })
+            .join("");
+    }
 
-  const projectShort = project.projectPath.split('/').filter(Boolean).slice(-2).join('/');
+    const projectShort = project.projectPath.split("/").filter(Boolean).slice(-2).join("/");
 
-  dialog.innerHTML = `
+    dialog.innerHTML = `
     <h3>New Session — ${escapeHtml(provider.name)} — ${escapeHtml(projectShort)}</h3>
     <div class="settings-field">
       <div class="settings-label">Permission Mode</div>
@@ -281,7 +296,7 @@ async function showNewSessionDialog(project, providerId = 'claude') {
         <div class="settings-description">Prepended to the agent command</div>
       </div>
       <div class="settings-field-control">
-        <input type="text" class="settings-input" id="nsd-pre-launch" placeholder="e.g. aws-vault exec profile --" value="${escapeHtml(effective.preLaunchCmd || '')}">
+        <input type="text" class="settings-input" id="nsd-pre-launch" placeholder="e.g. aws-vault exec profile --" value="${escapeHtml(effective.preLaunchCmd || "")}">
       </div>
     </div>
     <div class="settings-field settings-field-wide">
@@ -290,7 +305,7 @@ async function showNewSessionDialog(project, providerId = 'claude') {
         <div class="settings-description">Extra directories to include (comma-separated)</div>
       </div>
       <div class="settings-field-control">
-        <input type="text" class="settings-input" id="nsd-add-dirs" placeholder="/path/to/dir1, /path/to/dir2" value="${escapeHtml(effective.addDirs || '')}">
+        <input type="text" class="settings-input" id="nsd-add-dirs" placeholder="/path/to/dir1, /path/to/dir2" value="${escapeHtml(effective.addDirs || "")}">
       </div>
     </div>
     <div class="new-session-actions">
@@ -299,96 +314,106 @@ async function showNewSessionDialog(project, providerId = 'claude') {
     </div>
   `;
 
-  overlay.appendChild(dialog);
-  document.body.appendChild(overlay);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
 
-  // Bind mode grid clicks
-  const modeGrid = dialog.querySelector('#nsd-mode-grid');
-  modeGrid.addEventListener('click', (e) => {
-    const btn = e.target.closest('.permission-option');
-    if (!btn) return;
-    const mode = btn.dataset.mode;
-    if (mode === 'dangerous-skip') {
-      dangerousSkip = !dangerousSkip;
-      if (dangerousSkip) selectedMode = null;
-    } else {
-      dangerousSkip = false;
-      selectedMode = mode === 'null' ? null : mode;
+    // Bind mode grid clicks
+    const modeGrid = dialog.querySelector("#nsd-mode-grid");
+    modeGrid.addEventListener("click", e => {
+        const btn = e.target.closest(".permission-option");
+        if (!btn) return;
+        const mode = btn.dataset.mode;
+        if (mode === "dangerous-skip") {
+            dangerousSkip = !dangerousSkip;
+            if (dangerousSkip) selectedMode = null;
+        } else {
+            dangerousSkip = false;
+            selectedMode = mode === "null" ? null : mode;
+        }
+        modeGrid.innerHTML = renderModeGrid();
+    });
+
+    function close() {
+        overlay.remove();
     }
-    modeGrid.innerHTML = renderModeGrid();
-  });
 
-  function close() {
-    overlay.remove();
-  }
-
-  function start() {
-    const options = { provider: providerId };
-    if (dangerousSkip) {
-      options.dangerouslySkipPermissions = true;
-    } else if (selectedMode) {
-      options.permissionMode = selectedMode;
+    function start() {
+        const options = { provider: providerId };
+        if (dangerousSkip) {
+            options.dangerouslySkipPermissions = true;
+        } else if (selectedMode) {
+            options.permissionMode = selectedMode;
+        }
+        for (const f of provider.extraFields) {
+            const el = dialog.querySelector("#nsd-" + f.id);
+            if (!el) continue;
+            if (f.type === "toggle") {
+                if (el.checked) options[f.id] = true;
+            } else if (f.type === "text") {
+                const v = el.value.trim();
+                if (v) options[f.id] = v;
+            }
+        }
+        const preLaunch = dialog.querySelector("#nsd-pre-launch").value.trim();
+        if (preLaunch) options.preLaunchCmd = preLaunch;
+        options.addDirs = dialog.querySelector("#nsd-add-dirs").value.trim();
+        if (effective.mcpEmulation === false) options.mcpEmulation = false;
+        close();
+        launchNewSession(project, options);
     }
-    for (const f of provider.extraFields) {
-      const el = dialog.querySelector('#nsd-' + f.id);
-      if (!el) continue;
-      if (f.type === 'toggle') {
-        if (el.checked) options[f.id] = true;
-      } else if (f.type === 'text') {
-        const v = el.value.trim();
-        if (v) options[f.id] = v;
-      }
+
+    dialog.querySelector(".new-session-cancel-btn").onclick = close;
+    dialog.querySelector(".new-session-start-btn").onclick = start;
+    overlay.addEventListener("click", e => {
+        if (e.target === overlay) close();
+    });
+
+    // Keyboard support
+    function onKey(e) {
+        if (e.key === "Escape") {
+            close();
+            document.removeEventListener("keydown", onKey);
+        }
+        if (e.key === "Enter" && !e.target.matches("input")) {
+            start();
+            document.removeEventListener("keydown", onKey);
+        }
     }
-    const preLaunch = dialog.querySelector('#nsd-pre-launch').value.trim();
-    if (preLaunch) options.preLaunchCmd = preLaunch;
-    options.addDirs = dialog.querySelector('#nsd-add-dirs').value.trim();
-    if (effective.mcpEmulation === false) options.mcpEmulation = false;
-    close();
-    launchNewSession(project, options);
-  }
-
-  dialog.querySelector('.new-session-cancel-btn').onclick = close;
-  dialog.querySelector('.new-session-start-btn').onclick = start;
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
-
-  // Keyboard support
-  function onKey(e) {
-    if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onKey); }
-    if (e.key === 'Enter' && !e.target.matches('input')) { start(); document.removeEventListener('keydown', onKey); }
-  }
-  document.addEventListener('keydown', onKey);
+    document.addEventListener("keydown", onKey);
 }
 
 async function showResumeSessionDialog(session, providerId) {
-  if (!providerId) providerId = session.provider || 'claude';
-  const provider = PROVIDERS[providerId] || PROVIDERS.claude;
-  const effective = await window.api.getEffectiveSettings(session.projectPath);
+    if (!providerId) providerId = session.provider || "claude";
+    const provider = PROVIDERS[providerId] || PROVIDERS.claude;
+    const effective = await window.api.getEffectiveSettings(session.projectPath);
 
-  const overlay = document.createElement('div');
-  overlay.className = 'new-session-overlay';
+    const overlay = document.createElement("div");
+    overlay.className = "new-session-overlay";
 
-  const dialog = document.createElement('div');
-  dialog.className = 'new-session-dialog';
+    const dialog = document.createElement("div");
+    dialog.className = "new-session-dialog";
 
-  let selectedMode = effective.permissionMode || null;
-  let dangerousSkip = effective.dangerouslySkipPermissions || false;
+    let selectedMode = effective.permissionMode || null;
+    let dangerousSkip = effective.dangerouslySkipPermissions || false;
 
-  const modes = provider.approvalModes;
+    const modes = provider.approvalModes;
 
-  function renderModeGrid() {
-    let html = modes.map(m => {
-      const isSelected = !dangerousSkip && selectedMode === m.value;
-      return `<button class="permission-option${isSelected ? ' selected' : ''}" data-mode="${m.value}"><span class="perm-name">${escapeHtml(m.label)}</span><span class="perm-desc">${escapeHtml(m.desc)}</span></button>`;
-    }).join('');
-    if (provider.dangerousMode) {
-      html += `<button class="permission-option dangerous${dangerousSkip ? ' selected' : ''}" data-mode="dangerous-skip"><span class="perm-name">${escapeHtml(provider.dangerousMode.label)}</span><span class="perm-desc">${escapeHtml(provider.dangerousMode.desc)}</span></button>`;
+    function renderModeGrid() {
+        let html = modes
+            .map(m => {
+                const isSelected = !dangerousSkip && selectedMode === m.value;
+                return `<button class="permission-option${isSelected ? " selected" : ""}" data-mode="${m.value}"><span class="perm-name">${escapeHtml(m.label)}</span><span class="perm-desc">${escapeHtml(m.desc)}</span></button>`;
+            })
+            .join("");
+        if (provider.dangerousMode) {
+            html += `<button class="permission-option dangerous${dangerousSkip ? " selected" : ""}" data-mode="dangerous-skip"><span class="perm-name">${escapeHtml(provider.dangerousMode.label)}</span><span class="perm-desc">${escapeHtml(provider.dangerousMode.desc)}</span></button>`;
+        }
+        return html;
     }
-    return html;
-  }
 
-  const sessionName = session.name || session.summary || session.sessionId.slice(0, 8);
+    const sessionName = session.name || session.summary || session.sessionId.slice(0, 8);
 
-  dialog.innerHTML = `
+    dialog.innerHTML = `
     <h3>Resume Session — ${escapeHtml(sessionName)}</h3>
     <div class="settings-field">
       <div class="settings-label">Permission Mode</div>
@@ -400,7 +425,7 @@ async function showResumeSessionDialog(session, providerId) {
         <div class="settings-description">Enable Chrome browser automation</div>
       </div>
       <div class="settings-field-control">
-        <label class="settings-toggle"><input type="checkbox" id="rsd-chrome" ${effective.chrome ? 'checked' : ''}><span class="settings-toggle-slider"></span></label>
+        <label class="settings-toggle"><input type="checkbox" id="rsd-chrome" ${effective.chrome ? "checked" : ""}><span class="settings-toggle-slider"></span></label>
       </div>
     </div>
     <div class="settings-field settings-field-wide">
@@ -409,7 +434,7 @@ async function showResumeSessionDialog(session, providerId) {
         <div class="settings-description">Prepended to the claude command</div>
       </div>
       <div class="settings-field-control">
-        <input type="text" class="settings-input" id="rsd-pre-launch" placeholder="e.g. aws-vault exec profile --" value="${escapeHtml(effective.preLaunchCmd || '')}">
+        <input type="text" class="settings-input" id="rsd-pre-launch" placeholder="e.g. aws-vault exec profile --" value="${escapeHtml(effective.preLaunchCmd || "")}">
       </div>
     </div>
     <div class="settings-field settings-field-wide">
@@ -418,7 +443,7 @@ async function showResumeSessionDialog(session, providerId) {
         <div class="settings-description">Extra directories to include (comma-separated)</div>
       </div>
       <div class="settings-field-control">
-        <input type="text" class="settings-input" id="rsd-add-dirs" placeholder="/path/to/dir1, /path/to/dir2" value="${escapeHtml(effective.addDirs || '')}">
+        <input type="text" class="settings-input" id="rsd-add-dirs" placeholder="/path/to/dir1, /path/to/dir2" value="${escapeHtml(effective.addDirs || "")}">
       </div>
     </div>
     <div class="new-session-actions">
@@ -427,70 +452,78 @@ async function showResumeSessionDialog(session, providerId) {
     </div>
   `;
 
-  overlay.appendChild(dialog);
-  document.body.appendChild(overlay);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
 
-  // Bind mode grid clicks
-  const modeGrid = dialog.querySelector('#rsd-mode-grid');
-  modeGrid.addEventListener('click', (e) => {
-    const btn = e.target.closest('.permission-option');
-    if (!btn) return;
-    const mode = btn.dataset.mode;
-    if (mode === 'dangerous-skip') {
-      dangerousSkip = !dangerousSkip;
-      if (dangerousSkip) selectedMode = null;
-    } else {
-      dangerousSkip = false;
-      selectedMode = mode === 'null' ? null : mode;
+    // Bind mode grid clicks
+    const modeGrid = dialog.querySelector("#rsd-mode-grid");
+    modeGrid.addEventListener("click", e => {
+        const btn = e.target.closest(".permission-option");
+        if (!btn) return;
+        const mode = btn.dataset.mode;
+        if (mode === "dangerous-skip") {
+            dangerousSkip = !dangerousSkip;
+            if (dangerousSkip) selectedMode = null;
+        } else {
+            dangerousSkip = false;
+            selectedMode = mode === "null" ? null : mode;
+        }
+        modeGrid.innerHTML = renderModeGrid();
+    });
+
+    function close() {
+        overlay.remove();
     }
-    modeGrid.innerHTML = renderModeGrid();
-  });
 
-  function close() {
-    overlay.remove();
-  }
-
-  function resume() {
-    const options = { provider: providerId };
-    if (dangerousSkip) {
-      options.dangerouslySkipPermissions = true;
-    } else if (selectedMode) {
-      options.permissionMode = selectedMode;
+    function resume() {
+        const options = { provider: providerId };
+        if (dangerousSkip) {
+            options.dangerouslySkipPermissions = true;
+        } else if (selectedMode) {
+            options.permissionMode = selectedMode;
+        }
+        const chromeEl = dialog.querySelector("#rsd-chrome");
+        if (chromeEl && chromeEl.checked) {
+            options.chrome = true;
+        }
+        const preLaunch = dialog.querySelector("#rsd-pre-launch").value.trim();
+        if (preLaunch) options.preLaunchCmd = preLaunch;
+        options.addDirs = dialog.querySelector("#rsd-add-dirs").value.trim();
+        if (effective.mcpEmulation === false) options.mcpEmulation = false;
+        close();
+        openSession(session, options);
     }
-    const chromeEl = dialog.querySelector('#rsd-chrome');
-    if (chromeEl && chromeEl.checked) {
-      options.chrome = true;
+
+    dialog.querySelector(".new-session-cancel-btn").onclick = close;
+    dialog.querySelector(".new-session-start-btn").onclick = resume;
+    overlay.addEventListener("click", e => {
+        if (e.target === overlay) close();
+    });
+
+    function onKey(e) {
+        if (e.key === "Escape") {
+            close();
+            document.removeEventListener("keydown", onKey);
+        }
+        if (e.key === "Enter" && !e.target.matches("input")) {
+            resume();
+            document.removeEventListener("keydown", onKey);
+        }
     }
-    const preLaunch = dialog.querySelector('#rsd-pre-launch').value.trim();
-    if (preLaunch) options.preLaunchCmd = preLaunch;
-    options.addDirs = dialog.querySelector('#rsd-add-dirs').value.trim();
-    if (effective.mcpEmulation === false) options.mcpEmulation = false;
-    close();
-    openSession(session, options);
-  }
-
-  dialog.querySelector('.new-session-cancel-btn').onclick = close;
-  dialog.querySelector('.new-session-start-btn').onclick = resume;
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
-
-  function onKey(e) {
-    if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onKey); }
-    if (e.key === 'Enter' && !e.target.matches('input')) { resume(); document.removeEventListener('keydown', onKey); }
-  }
-  document.addEventListener('keydown', onKey);
+    document.addEventListener("keydown", onKey);
 }
 
 // Settings viewer is in settings-panel.js (openSettingsViewer / closeSettingsViewer)
 // Global settings button & add project button bindings are in app.js (need DOM refs)
 
 function showAddProjectDialog() {
-  const overlay = document.createElement('div');
-  overlay.className = 'add-project-overlay';
+    const overlay = document.createElement("div");
+    overlay.className = "add-project-overlay";
 
-  const dialog = document.createElement('div');
-  dialog.className = 'add-project-dialog';
+    const dialog = document.createElement("div");
+    dialog.className = "add-project-dialog";
 
-  dialog.innerHTML = `
+    dialog.innerHTML = `
     <h3>Add Project</h3>
     <div class="add-project-hint">Select a folder to create a new project. To start a session in an existing project, use the + on its project header.</div>
     <div class="folder-input-row">
@@ -504,49 +537,51 @@ function showAddProjectDialog() {
     </div>
   `;
 
-  overlay.appendChild(dialog);
-  document.body.appendChild(overlay);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
 
-  const pathInput = dialog.querySelector('#add-project-path');
-  const errorEl = dialog.querySelector('#add-project-error');
-  pathInput.focus();
+    const pathInput = dialog.querySelector("#add-project-path");
+    const errorEl = dialog.querySelector("#add-project-error");
+    pathInput.focus();
 
-  function close() {
-    overlay.remove();
-    document.removeEventListener('keydown', onKey);
-  }
-
-  async function addProject() {
-    const projectPath = pathInput.value.trim();
-    if (!projectPath) {
-      errorEl.textContent = 'Please enter a folder path.';
-      errorEl.style.display = 'block';
-      return;
+    function close() {
+        overlay.remove();
+        document.removeEventListener("keydown", onKey);
     }
-    errorEl.style.display = 'none';
-    const result = await window.api.addProject(projectPath);
-    if (result.error) {
-      errorEl.textContent = result.error;
-      errorEl.style.display = 'block';
-      return;
+
+    async function addProject() {
+        const projectPath = pathInput.value.trim();
+        if (!projectPath) {
+            errorEl.textContent = "Please enter a folder path.";
+            errorEl.style.display = "block";
+            return;
+        }
+        errorEl.style.display = "none";
+        const result = await window.api.addProject(projectPath);
+        if (result.error) {
+            errorEl.textContent = result.error;
+            errorEl.style.display = "block";
+            return;
+        }
+        close();
+
+        await loadProjects();
     }
-    close();
 
-    await loadProjects();
-  }
+    dialog.querySelector(".add-project-browse-btn").onclick = async () => {
+        const folder = await window.api.browseFolder();
+        if (folder) pathInput.value = folder;
+    };
 
-  dialog.querySelector('.add-project-browse-btn').onclick = async () => {
-    const folder = await window.api.browseFolder();
-    if (folder) pathInput.value = folder;
-  };
+    dialog.querySelector(".add-project-cancel-btn").onclick = close;
+    dialog.querySelector(".add-project-add-btn").onclick = addProject;
+    overlay.addEventListener("click", e => {
+        if (e.target === overlay) close();
+    });
 
-  dialog.querySelector('.add-project-cancel-btn').onclick = close;
-  dialog.querySelector('.add-project-add-btn').onclick = addProject;
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
-
-  function onKey(e) {
-    if (e.key === 'Escape') close();
-    if (e.key === 'Enter') addProject();
-  }
-  document.addEventListener('keydown', onKey);
+    function onKey(e) {
+        if (e.key === "Escape") close();
+        if (e.key === "Enter") addProject();
+    }
+    document.addEventListener("keydown", onKey);
 }

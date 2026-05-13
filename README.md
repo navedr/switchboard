@@ -54,10 +54,10 @@ Switchboard monitors all your sessions in the background and shows status indica
 
 ## Editor
 
-| Shortcut | Action |
-|----------|--------|
+| Shortcut           | Action                                |
+| ------------------ | ------------------------------------- |
 | `Cmd+F` / `Ctrl+F` | Find in file (also works in terminal) |
-| `Cmd+G` / `Ctrl+G` | Go to line |
+| `Cmd+G` / `Ctrl+G` | Go to line                            |
 
 ## Download
 
@@ -74,9 +74,9 @@ Grab the latest release for your platform:
 - **Node.js** 20+
 - **npm** 10+
 - Platform build tools for native modules:
-  - **macOS**: Xcode Command Line Tools (`xcode-select --install`)
-  - **Linux**: `build-essential`, `python3` (`sudo apt install build-essential python3`)
-  - **Windows**: Visual Studio Build Tools or `npm install -g windows-build-tools`
+    - **macOS**: Xcode Command Line Tools (`xcode-select --install`)
+    - **Linux**: `build-essential`, `python3` (`sudo apt install build-essential python3`)
+    - **Windows**: Visual Studio Build Tools or `npm install -g windows-build-tools`
 
 ## Development Setup
 

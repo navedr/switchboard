@@ -1,13 +1,13 @@
 // schedule-ipc.js — IPC handlers and helpers for scheduled task creation
-const { ipcMain } = require('electron');
-const path = require('path');
-const fs = require('fs');
-const os = require('os');
-const crypto = require('crypto');
+const { ipcMain } = require("electron");
+const path = require("path");
+const fs = require("fs");
+const os = require("os");
+const crypto = require("crypto");
 
-const CLAUDE_DIR = path.join(os.homedir(), '.claude');
-const PROJECTS_DIR = path.join(CLAUDE_DIR, 'projects');
-const SCHEDULE_COMMANDS_DIR = path.join(CLAUDE_DIR, 'commands');
+const CLAUDE_DIR = path.join(os.homedir(), ".claude");
+const PROJECTS_DIR = path.join(CLAUDE_DIR, "projects");
+const SCHEDULE_COMMANDS_DIR = path.join(CLAUDE_DIR, "commands");
 
 const SCHEDULE_CREATOR_TEMPLATE = `---
 name: create-switchboard-schedule
@@ -110,110 +110,112 @@ Just describe the task you have in mind, or try one of these:
 - **"Disable schedule-repo-health"** — toggle a schedule off`;
 
 function ensureScheduleCreatorCommand() {
-  try {
-    const commandPath = path.join(SCHEDULE_COMMANDS_DIR, 'create-switchboard-schedule.md');
-    if (!fs.existsSync(commandPath)) {
-      fs.mkdirSync(SCHEDULE_COMMANDS_DIR, { recursive: true });
-      fs.writeFileSync(commandPath, SCHEDULE_CREATOR_TEMPLATE);
+    try {
+        const commandPath = path.join(SCHEDULE_COMMANDS_DIR, "create-switchboard-schedule.md");
+        if (!fs.existsSync(commandPath)) {
+            fs.mkdirSync(SCHEDULE_COMMANDS_DIR, { recursive: true });
+            fs.writeFileSync(commandPath, SCHEDULE_CREATOR_TEMPLATE);
+        }
+    } catch (err) {
+        console.error("[schedule] Failed to create schedule command:", err);
     }
-  } catch (err) {
-    console.error('[schedule] Failed to create schedule command:', err);
-  }
 }
 
 function init(log, runCommand) {
-  const { parseFrontmatter, createScheduleSession, buildScheduleCommand } = require('./schedule-runner');
+    const { parseFrontmatter, createScheduleSession, buildScheduleCommand } = require("./schedule-runner");
 
-  ipcMain.handle('get-schedule-creator-command', () => {
-    try {
-      const commandPath = path.join(SCHEDULE_COMMANDS_DIR, 'create-switchboard-schedule.md');
-      ensureScheduleCreatorCommand();
-      return fs.readFileSync(commandPath, 'utf8');
-    } catch (err) {
-      log.error('[schedule] Failed to read schedule command:', err);
-      return null;
-    }
-  });
+    ipcMain.handle("get-schedule-creator-command", () => {
+        try {
+            const commandPath = path.join(SCHEDULE_COMMANDS_DIR, "create-switchboard-schedule.md");
+            ensureScheduleCreatorCommand();
+            return fs.readFileSync(commandPath, "utf8");
+        } catch (err) {
+            log.error("[schedule] Failed to read schedule command:", err);
+            return null;
+        }
+    });
 
-  ipcMain.handle('create-schedule-session', (_event, projectPath) => {
-    try {
-      ensureScheduleCreatorCommand();
-      const commandPath = path.join(SCHEDULE_COMMANDS_DIR, 'create-switchboard-schedule.md');
-      const systemPrompt = fs.readFileSync(commandPath, 'utf8');
+    ipcMain.handle("create-schedule-session", (_event, projectPath) => {
+        try {
+            ensureScheduleCreatorCommand();
+            const commandPath = path.join(SCHEDULE_COMMANDS_DIR, "create-switchboard-schedule.md");
+            const systemPrompt = fs.readFileSync(commandPath, "utf8");
 
-      const sessionId = crypto.randomUUID();
-      const msgId = crypto.randomUUID();
-      const timestamp = new Date().toISOString();
-      const folder = projectPath.replace(/[\\/:_]/g, '-').replace(/^-/, '-');
-      const claudeProjectDir = path.join(PROJECTS_DIR, folder);
+            const sessionId = crypto.randomUUID();
+            const msgId = crypto.randomUUID();
+            const timestamp = new Date().toISOString();
+            const folder = projectPath.replace(/[\\/:_]/g, "-").replace(/^-/, "-");
+            const claudeProjectDir = path.join(PROJECTS_DIR, folder);
 
-      fs.mkdirSync(claudeProjectDir, { recursive: true });
-      const jsonlPath = path.join(claudeProjectDir, `${sessionId}.jsonl`);
+            fs.mkdirSync(claudeProjectDir, { recursive: true });
+            const jsonlPath = path.join(claudeProjectDir, `${sessionId}.jsonl`);
 
-      const snapshot = JSON.stringify({
-        type: 'file-history-snapshot',
-        messageId: msgId,
-        snapshot: { messageId: msgId, trackedFileBackups: {}, timestamp },
-        isSnapshotUpdate: false,
-      });
+            const snapshot = JSON.stringify({
+                type: "file-history-snapshot",
+                messageId: msgId,
+                snapshot: { messageId: msgId, trackedFileBackups: {}, timestamp },
+                isSnapshotUpdate: false,
+            });
 
-      const assistantMsg = JSON.stringify({
-        parentUuid: null,
-        isSidechain: false,
-        userType: 'external',
-        cwd: projectPath,
-        sessionId,
-        version: '1.0.0',
-        gitBranch: 'main',
-        slug: 'create-schedule',
-        type: 'assistant',
-        message: { role: 'assistant', content: [{ type: 'text', text: SCHEDULE_WELCOME_MESSAGE }] },
-        uuid: msgId,
-        timestamp,
-      });
+            const assistantMsg = JSON.stringify({
+                parentUuid: null,
+                isSidechain: false,
+                userType: "external",
+                cwd: projectPath,
+                sessionId,
+                version: "1.0.0",
+                gitBranch: "main",
+                slug: "create-schedule",
+                type: "assistant",
+                message: { role: "assistant", content: [{ type: "text", text: SCHEDULE_WELCOME_MESSAGE }] },
+                uuid: msgId,
+                timestamp,
+            });
 
-      fs.writeFileSync(jsonlPath, snapshot + '\n' + assistantMsg + '\n');
-      log.info(`[schedule] Pre-created schedule session ${sessionId} for ${projectPath}`);
+            fs.writeFileSync(jsonlPath, snapshot + "\n" + assistantMsg + "\n");
+            log.info(`[schedule] Pre-created schedule session ${sessionId} for ${projectPath}`);
 
-      return { sessionId, systemPrompt };
-    } catch (err) {
-      log.error('[schedule] Failed to create schedule session:', err);
-      return null;
-    }
-  });
-  ipcMain.handle('run-schedule-now', (_event, filePath) => {
-    try {
-      const content = fs.readFileSync(filePath, 'utf8');
-      const { meta, body } = parseFrontmatter(content);
-      if (!body) return { ok: false, error: 'No prompt in schedule file' };
+            return { sessionId, systemPrompt };
+        } catch (err) {
+            log.error("[schedule] Failed to create schedule session:", err);
+            return null;
+        }
+    });
+    ipcMain.handle("run-schedule-now", (_event, filePath) => {
+        try {
+            const content = fs.readFileSync(filePath, "utf8");
+            const { meta, body } = parseFrontmatter(content);
+            if (!body) return { ok: false, error: "No prompt in schedule file" };
 
-      const commandsDir = path.dirname(filePath);
-      const dotClaudeDir = path.dirname(commandsDir);
-      const projectPath = path.dirname(dotClaudeDir);
+            const commandsDir = path.dirname(filePath);
+            const dotClaudeDir = path.dirname(commandsDir);
+            const projectPath = path.dirname(dotClaudeDir);
 
-      const folder = projectPath.replace(/[\\/:_]/g, '-').replace(/^-/, '-');
-      const schedule = {
-        file: path.basename(filePath),
-        filePath, projectPath, folder,
-        name: meta.name || path.basename(filePath),
-        cron: meta.cron || '* * * * *',
-        slug: meta.slug || path.basename(filePath, '.md').replace(/^schedule-/, ''),
-        cli: meta.cli || {},
-        prompt: body,
-      };
+            const folder = projectPath.replace(/[\\/:_]/g, "-").replace(/^-/, "-");
+            const schedule = {
+                file: path.basename(filePath),
+                filePath,
+                projectPath,
+                folder,
+                name: meta.name || path.basename(filePath),
+                cron: meta.cron || "* * * * *",
+                slug: meta.slug || path.basename(filePath, ".md").replace(/^schedule-/, ""),
+                cli: meta.cli || {},
+                prompt: body,
+            };
 
-      const { sessionId } = createScheduleSession(schedule);
-      const cmd = buildScheduleCommand(sessionId, schedule);
+            const { sessionId } = createScheduleSession(schedule);
+            const cmd = buildScheduleCommand(sessionId, schedule);
 
-      runCommand(cmd, projectPath, `Manual run ${schedule.name}`, () => {});
+            runCommand(cmd, projectPath, `Manual run ${schedule.name}`, () => {});
 
-      log.info(`[schedule] Manual run triggered: ${schedule.name} (session ${sessionId})`);
-      return { ok: true, sessionId };
-    } catch (err) {
-      log.error('[schedule] Failed to run schedule:', err);
-      return { ok: false, error: err.message };
-    }
-  });
+            log.info(`[schedule] Manual run triggered: ${schedule.name} (session ${sessionId})`);
+            return { ok: true, sessionId };
+        } catch (err) {
+            log.error("[schedule] Failed to run schedule:", err);
+            return { ok: false, error: err.message };
+        }
+    });
 }
 
 module.exports = { ensureScheduleCreatorCommand, init };
