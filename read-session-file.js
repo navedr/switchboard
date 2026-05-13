@@ -13,11 +13,15 @@ function readSessionFile(filePath, folder, projectPath) {
         let textContent = "";
         let slug = null;
         let customTitle = null;
+        let aiTitle = null;
         for (const line of lines) {
             const entry = JSON.parse(line);
             if (entry.slug && !slug) slug = entry.slug;
             if (entry.type === "custom-title" && entry.customTitle) {
                 customTitle = entry.customTitle;
+            }
+            if (entry.type === "ai-title" && entry.aiTitle) {
+                aiTitle = entry.aiTitle;
             }
             if (
                 entry.type === "user" ||
@@ -57,7 +61,7 @@ function readSessionFile(filePath, folder, projectPath) {
             messageCount,
             textContent,
             slug,
-            customTitle,
+            customTitle: customTitle || aiTitle,
         };
     } catch {
         return null;
