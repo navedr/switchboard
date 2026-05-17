@@ -101,8 +101,12 @@ function getSettingsFields() {
     ];
 }
 
-function getEnvVars(mcpServer) {
-    return { CLAUDE_CODE_SSE_PORT: mcpServer ? String(mcpServer.port) : undefined };
+function getEnvVars(mcpServer, configDir) {
+    const env = { CLAUDE_CODE_SSE_PORT: mcpServer ? String(mcpServer.port) : undefined };
+    if (configDir && configDir !== path.join(os.homedir(), ".claude")) {
+        env.CLAUDE_CONFIG_DIR = configDir;
+    }
+    return env;
 }
 
 module.exports = {

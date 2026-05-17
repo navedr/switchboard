@@ -10,14 +10,14 @@ const { encodeProjectPath } = require("./encode-project-path");
  * Session cache module.
  * Call init(ctx) once with the shared context object.
  */
-let PROJECTS_DIR, activeSessions, getMainWindow, log;
+let getAllProjectsDirs, activeSessions, getMainWindow, log;
 let deleteCachedFolder, getCachedByFolder, upsertCachedSessions, deleteCachedSession;
 let deleteSearchFolder, deleteSearchSession, upsertSearchEntries;
 let setFolderMeta, getAllFolderMeta, getAllMeta, getAllCached, getSetting, getMeta, setName;
 let runInTransaction;
 
 function init(ctx) {
-    PROJECTS_DIR = ctx.PROJECTS_DIR;
+    getAllProjectsDirs = ctx.getAllProjectsDirs;
     activeSessions = ctx.activeSessions;
     getMainWindow = ctx.getMainWindow;
     log = ctx.log;
@@ -42,8 +42,8 @@ function init(ctx) {
 // readSessionFile is imported from read-session-file.js (shared with worker)
 
 /** Read one folder from filesystem by scanning .jsonl files directly */
-function readFolderFromFilesystem(folder) {
-    const folderPath = path.join(PROJECTS_DIR, folder);
+function readFolderFromFilesystem(folder, projectsDir) {
+    const folderPath = path.join(projectsDir, folder);
     const projectPath = deriveProjectPath(folderPath, folder);
     if (!projectPath) return { projectPath: null, sessions: [] };
     const sessions = [];
@@ -60,8 +60,18 @@ function readFolderFromFilesystem(folder) {
 }
 
 /** Refresh a single folder incrementally: only re-read changed/new .jsonl files */
-function refreshFolder(folder) {
-    const folderPath = path.join(PROJECTS_DIR, folder);
+function refreshFolder(folder, projectsDir) {
+    if (!projectsDir) {
+        for (const dir of getAllProjectsDirs()) {
+            const fp = path.join(dir, folder);
+            if (fs.existsSync(fp)) {
+                projectsDir = dir;
+                break;
+            }
+        }
+        if (!projectsDir) projectsDir = getAllProjectsDirs()[0];
+    }
+    const folderPath = path.join(projectsDir, folder);
     if (!fs.existsSync(folderPath)) {
         deleteCachedFolder(folder);
         return;
@@ -163,17 +173,19 @@ function refreshFolder(folder) {
 
 /** Populate entire cache from filesystem (cold start) */
 function populateCacheFromFilesystem() {
-    try {
-        const folders = fs
-            .readdirSync(PROJECTS_DIR, { withFileTypes: true })
-            .filter(d => d.isDirectory() && d.name !== ".git")
-            .map(d => d.name);
+    for (const projectsDir of getAllProjectsDirs()) {
+        try {
+            const folders = fs
+                .readdirSync(projectsDir, { withFileTypes: true })
+                .filter(d => d.isDirectory() && d.name !== ".git")
+                .map(d => d.name);
 
-        for (const folder of folders) {
-            refreshFolder(folder);
+            for (const folder of folders) {
+                refreshFolder(folder, projectsDir);
+            }
+        } catch (err) {
+            console.error("Error populating cache:", err);
         }
-    } catch (err) {
-        console.error("Error populating cache:", err);
     }
 }
 
@@ -227,28 +239,30 @@ function buildProjectsFromCache(showArchived) {
     }
 
     // Include empty project directories (no sessions yet)
-    try {
-        const folderMeta = getAllFolderMeta();
-        const dirs = fs
-            .readdirSync(PROJECTS_DIR, { withFileTypes: true })
-            .filter(d => d.isDirectory() && d.name !== ".git");
-        for (const d of dirs) {
-            let projectPath = folderMeta.get(d.name)?.projectPath;
-            if (!projectPath) {
-                projectPath = deriveProjectPath(path.join(PROJECTS_DIR, d.name), d.name);
-                if (projectPath) setFolderMeta(d.name, projectPath, 0);
+    for (const projectsDir of getAllProjectsDirs()) {
+        try {
+            const folderMeta = getAllFolderMeta();
+            const dirs = fs
+                .readdirSync(projectsDir, { withFileTypes: true })
+                .filter(d => d.isDirectory() && d.name !== ".git");
+            for (const d of dirs) {
+                let projectPath = folderMeta.get(d.name)?.projectPath;
+                if (!projectPath) {
+                    projectPath = deriveProjectPath(path.join(projectsDir, d.name), d.name);
+                    if (projectPath) setFolderMeta(d.name, projectPath, 0);
+                }
+                if (!projectPath) continue;
+                if (hiddenProjects.has(projectPath)) continue;
+                if (!projectMap.has(projectPath)) {
+                    projectMap.set(projectPath, {
+                        folder: encodeProjectPath(projectPath),
+                        projectPath,
+                        sessions: [],
+                    });
+                }
             }
-            if (!projectPath) continue;
-            if (hiddenProjects.has(projectPath)) continue;
-            if (!projectMap.has(projectPath)) {
-                projectMap.set(projectPath, {
-                    folder: encodeProjectPath(projectPath),
-                    projectPath,
-                    sessions: [],
-                });
-            }
-        }
-    } catch {}
+        } catch {}
+    }
 
     // Inject active plain terminal sessions so they participate in sorting
     for (const [sessionId, session] of activeSessions) {
@@ -322,7 +336,7 @@ function populateCacheViaWorker() {
     sendStatus("Scanning projects\u2026", "active");
 
     const worker = new Worker(path.join(__dirname, "workers", "scan-projects.js"), {
-        workerData: { projectsDir: PROJECTS_DIR },
+        workerData: { projectsDir: getAllProjectsDirs() },
     });
 
     worker.on("message", msg => {

@@ -5,10 +5,10 @@ const fs = require("fs");
  * Fork / plan-accept detection for active PTY sessions.
  * Call init(ctx) once with shared context.
  */
-let PROJECTS_DIR, activeSessions, getMainWindow, log, rekeyMcpServer;
+let getAllProjectsDirs, activeSessions, getMainWindow, log, rekeyMcpServer;
 
 function init(ctx) {
-    PROJECTS_DIR = ctx.PROJECTS_DIR;
+    getAllProjectsDirs = ctx.getAllProjectsDirs;
     activeSessions = ctx.activeSessions;
     getMainWindow = ctx.getMainWindow;
     log = ctx.log;
@@ -81,7 +81,16 @@ function readOldSessionTail(filePath) {
 
 /** Detect fork or plan-accept transitions for active PTY sessions in a folder */
 function detectSessionTransitions(folder) {
-    const folderPath = path.join(PROJECTS_DIR, folder);
+    // First match wins — assumes folder names don't collide across config dirs
+    let folderPath;
+    for (const dir of getAllProjectsDirs()) {
+        const fp = path.join(dir, folder);
+        if (fs.existsSync(fp)) {
+            folderPath = fp;
+            break;
+        }
+    }
+    if (!folderPath) return;
     let currentFiles;
     try {
         currentFiles = fs.readdirSync(folderPath).filter(f => f.endsWith(".jsonl"));

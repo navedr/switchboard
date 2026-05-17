@@ -47,6 +47,12 @@ const {
 } = require("./shell-profiles");
 const { startScheduler } = require("./schedule-runner");
 const { getProvider } = require("./providers");
+const {
+    resolveConfigDir,
+    getProjectsDir,
+    getAllKnownConfigDirs,
+    DEFAULT_CLAUDE_DIR,
+} = require("./config-dir-resolver");
 
 // --- Auto-updater (only in packaged builds) ---
 let autoUpdater = null;
@@ -117,6 +123,7 @@ const {
     setSetting,
     deleteSetting,
     closeDb,
+    runInTransaction,
 } = require("./db");
 
 const PROJECTS_DIR = path.join(os.homedir(), ".claude", "projects");
@@ -151,7 +158,9 @@ function isSensitivePath(filePath) {
 // or active project directories.
 function isAllowedMemoryPath(filePath) {
     const resolved = path.resolve(filePath);
-    if (resolved.startsWith(CLAUDE_DIR + path.sep) || resolved === CLAUDE_DIR) return true;
+    for (const configDir of getAllKnownConfigDirs()) {
+        if (resolved.startsWith(configDir + path.sep) || resolved === configDir) return true;
+    }
     for (const [, session] of activeSessions) {
         if (session.projectPath && resolved.startsWith(session.projectPath + path.sep)) return true;
     }
@@ -355,7 +364,7 @@ const { deriveProjectPath } = require("./derive-project-path");
 // Session cache → session-cache.js
 const sessionCache = require("./session-cache");
 sessionCache.init({
-    PROJECTS_DIR,
+    getAllProjectsDirs: () => getAllKnownConfigDirs().map(d => path.join(d, "projects")),
     activeSessions,
     getMainWindow: () => mainWindow,
     log,
@@ -374,6 +383,7 @@ sessionCache.init({
         getSetting,
         getMeta,
         setName,
+        runInTransaction,
     },
 });
 const {
@@ -399,7 +409,7 @@ ipcMain.handle("browse-folder", async () => {
 });
 
 // --- IPC: add-project ---
-ipcMain.handle("add-project", (_event, projectPath) => {
+ipcMain.handle("add-project", async (_event, projectPath) => {
     try {
         // Validate the path exists and is a directory
         const stat = fs.statSync(projectPath);
@@ -412,9 +422,13 @@ ipcMain.handle("add-project", (_event, projectPath) => {
             setSetting("global", global);
         }
 
-        // Create the corresponding folder in ~/.claude/projects/ so it persists
+        // Create the corresponding folder in the correct config dir's projects/ so it persists
         const folder = projectPath.replace(/[\\/:_]/g, "-").replace(/^-/, "-");
-        const folderPath = path.join(PROJECTS_DIR, folder);
+        const addProjectShell = resolveShell(
+            (getSetting("global") || {}).shellProfile || SETTING_DEFAULTS.shellProfile,
+        ).path;
+        const addProjectConfigDir = await resolveConfigDir(projectPath, addProjectShell);
+        const folderPath = path.join(getProjectsDir(addProjectConfigDir), folder);
         if (!fs.existsSync(folderPath)) {
             fs.mkdirSync(folderPath, { recursive: true });
         }
@@ -789,94 +803,105 @@ ipcMain.handle("get-memories", () => {
     const global = getSetting("global") || {};
     const hiddenProjects = new Set(global.hiddenProjects || []);
 
-    // --- Global files ---
-    const globalFiles = scanMdFiles(CLAUDE_DIR).map(f => ({ ...f, displayPath: "~/.claude" }));
+    // --- Global files (from all known config dirs) ---
+    const globalFiles = [];
+    for (const configDir of getAllKnownConfigDirs()) {
+        const label = configDir === DEFAULT_CLAUDE_DIR ? "~/.claude" : "~/" + path.basename(configDir);
+        globalFiles.push(...scanMdFiles(configDir).map(f => ({ ...f, displayPath: label })));
+    }
 
     // --- Per-project files ---
     const projects = [];
-    try {
-        if (fs.existsSync(PROJECTS_DIR)) {
-            const folders = fs
-                .readdirSync(PROJECTS_DIR, { withFileTypes: true })
-                .filter(d => d.isDirectory() && d.name !== ".git")
-                .map(d => d.name);
+    const seenMemoryFolders = new Set();
+    for (const configDir of getAllKnownConfigDirs()) {
+        const projectsDir = path.join(configDir, "projects");
+        const configDirLabel = configDir === DEFAULT_CLAUDE_DIR ? "~/.claude" : "~/" + path.basename(configDir);
+        try {
+            if (fs.existsSync(projectsDir)) {
+                const folders = fs
+                    .readdirSync(projectsDir, { withFileTypes: true })
+                    .filter(d => d.isDirectory() && d.name !== ".git" && !seenMemoryFolders.has(d.name))
+                    .map(d => {
+                        seenMemoryFolders.add(d.name);
+                        return d.name;
+                    });
 
-            for (const folder of folders) {
-                const folderPath = path.join(PROJECTS_DIR, folder);
-                const projectPath = deriveProjectPath(folderPath, folder);
-                if (projectPath && hiddenProjects.has(projectPath)) continue;
+                for (const folder of folders) {
+                    const folderPath = path.join(projectsDir, folder);
+                    const projectPath = deriveProjectPath(folderPath, folder);
+                    if (projectPath && hiddenProjects.has(projectPath)) continue;
 
-                // Use same 2-deep short path as Sessions tab (e.g. "dev/MyClaude")
-                const shortName = projectPath
-                    ? projectPath.split("/").filter(Boolean).slice(-2).join("/")
-                    : folderToShortPath(folder);
-                const files = [];
-                const seenPaths = new Set();
+                    // Use same 2-deep short path as Sessions tab (e.g. "dev/MyClaude")
+                    const shortName = projectPath
+                        ? projectPath.split("/").filter(Boolean).slice(-2).join("/")
+                        : folderToShortPath(folder);
+                    const files = [];
+                    const seenPaths = new Set();
 
-                // 1. ~/.claude/projects/{folder}/ — claude-home .md files
-                const claudeHomeFiles = scanMdFiles(folderPath);
-                for (const f of claudeHomeFiles) {
-                    files.push({ ...f, displayPath: "~/.claude", source: "claude-home" });
-                    seenPaths.add(f.filePath);
-                }
-                // memory/MEMORY.md
-                const memoryDir = path.join(folderPath, "memory");
-                const memoryFiles = scanMdFiles(memoryDir);
-                for (const f of memoryFiles) {
-                    files.push({ ...f, displayPath: "~/.claude", source: "claude-home" });
-                    seenPaths.add(f.filePath);
-                }
+                    const claudeHomeFiles = scanMdFiles(folderPath);
+                    for (const f of claudeHomeFiles) {
+                        files.push({ ...f, displayPath: configDirLabel, source: "claude-home" });
+                        seenPaths.add(f.filePath);
+                    }
+                    // memory/MEMORY.md
+                    const memoryDir = path.join(folderPath, "memory");
+                    const memoryFiles = scanMdFiles(memoryDir);
+                    for (const f of memoryFiles) {
+                        files.push({ ...f, displayPath: configDirLabel, source: "claude-home" });
+                        seenPaths.add(f.filePath);
+                    }
 
-                // 2. {projectPath}/ — project root CLAUDE.md, agents.md
-                if (projectPath) {
-                    for (const name of ["CLAUDE.md", "GEMINI.md", "agents.md"]) {
-                        const fp = path.join(projectPath, name);
-                        try {
-                            if (fs.existsSync(fp)) {
-                                const content = fs.readFileSync(fp, "utf8").trim();
-                                if (content && !seenPaths.has(fp)) {
-                                    const stat = fs.statSync(fp);
-                                    files.push({
-                                        filename: name,
-                                        filePath: fp,
-                                        modified: stat.mtime.toISOString(),
-                                        displayPath: shortName + "/",
-                                        source: "project",
-                                    });
-                                    seenPaths.add(fp);
+                    // 2. {projectPath}/ — project root CLAUDE.md, agents.md
+                    if (projectPath) {
+                        for (const name of ["CLAUDE.md", "GEMINI.md", "agents.md"]) {
+                            const fp = path.join(projectPath, name);
+                            try {
+                                if (fs.existsSync(fp)) {
+                                    const content = fs.readFileSync(fp, "utf8").trim();
+                                    if (content && !seenPaths.has(fp)) {
+                                        const stat = fs.statSync(fp);
+                                        files.push({
+                                            filename: name,
+                                            filePath: fp,
+                                            modified: stat.mtime.toISOString(),
+                                            displayPath: shortName + "/",
+                                            source: "project",
+                                        });
+                                        seenPaths.add(fp);
+                                    }
                                 }
+                            } catch {}
+                        }
+
+                        // 3. {projectPath}/.claude/ — commands/*.md and other .md files
+                        const dotClaudeDir = path.join(projectPath, ".claude");
+                        const dotClaudeFiles = scanMdFiles(dotClaudeDir);
+                        for (const f of dotClaudeFiles) {
+                            if (!seenPaths.has(f.filePath)) {
+                                files.push({ ...f, displayPath: shortName + "/.claude/", source: "project" });
+                                seenPaths.add(f.filePath);
                             }
-                        } catch {}
-                    }
-
-                    // 3. {projectPath}/.claude/ — commands/*.md and other .md files
-                    const dotClaudeDir = path.join(projectPath, ".claude");
-                    const dotClaudeFiles = scanMdFiles(dotClaudeDir);
-                    for (const f of dotClaudeFiles) {
-                        if (!seenPaths.has(f.filePath)) {
-                            files.push({ ...f, displayPath: shortName + "/.claude/", source: "project" });
-                            seenPaths.add(f.filePath);
+                        }
+                        // commands/*.md
+                        const commandsDir = path.join(dotClaudeDir, "commands");
+                        const commandFiles = scanMdFiles(commandsDir);
+                        for (const f of commandFiles) {
+                            if (!seenPaths.has(f.filePath)) {
+                                files.push({ ...f, displayPath: shortName + "/.claude/commands/", source: "project" });
+                                seenPaths.add(f.filePath);
+                            }
                         }
                     }
-                    // commands/*.md
-                    const commandsDir = path.join(dotClaudeDir, "commands");
-                    const commandFiles = scanMdFiles(commandsDir);
-                    for (const f of commandFiles) {
-                        if (!seenPaths.has(f.filePath)) {
-                            files.push({ ...f, displayPath: shortName + "/.claude/commands/", source: "project" });
-                            seenPaths.add(f.filePath);
-                        }
-                    }
-                }
 
-                if (files.length > 0) {
-                    projects.push({ folder, projectPath: projectPath || "", shortName, files });
+                    if (files.length > 0) {
+                        projects.push({ folder, projectPath: projectPath || "", shortName, files });
+                    }
                 }
             }
+        } catch (err) {
+            console.error("Error scanning memories:", err);
         }
-    } catch (err) {
-        console.error("Error scanning memories:", err);
-    }
+    } // end for configDir
 
     // Sort projects by most recent file modified date
     projects.sort((a, b) => {
@@ -1067,7 +1092,14 @@ ipcMain.handle("read-session-jsonl", (_event, sessionId) => {
     } else if (provider === "copilot") {
         jsonlPath = path.join(os.homedir(), ".copilot", "session-state", sessionId, "events.jsonl");
     } else {
-        jsonlPath = path.join(PROJECTS_DIR, cached.folder, sessionId + ".jsonl");
+        for (const dir of getAllKnownConfigDirs().map(d => path.join(d, "projects"))) {
+            const candidate = path.join(dir, cached.folder, sessionId + ".jsonl");
+            if (fs.existsSync(candidate)) {
+                jsonlPath = candidate;
+                break;
+            }
+        }
+        if (!jsonlPath) jsonlPath = path.join(PROJECTS_DIR, cached.folder, sessionId + ".jsonl");
     }
 
     if (!jsonlPath || !fs.existsSync(jsonlPath)) {
@@ -1302,11 +1334,16 @@ ipcMain.handle("open-terminal", async (_event, sessionId, projectPath, isNew, se
     let knownJsonlFiles = new Set();
     let sessionSlug = null;
     let projectFolder = null;
+    let sessionConfigDir = null;
 
     if (!isPlainTerminal) {
+        // Resolve CLAUDE_CONFIG_DIR for this project (detects shell-level overrides)
+        sessionConfigDir = await resolveConfigDir(projectPath, shell);
+        const sessionProjectsDir = getProjectsDir(sessionConfigDir);
+
         // Snapshot existing .jsonl files before spawning (for new session + fork/plan detection)
         projectFolder = projectPath.replace(/[\\/:_]/g, "-").replace(/^-/, "-");
-        const claudeProjectDir = path.join(PROJECTS_DIR, projectFolder);
+        const claudeProjectDir = path.join(sessionProjectsDir, projectFolder);
         if (fs.existsSync(claudeProjectDir)) {
             try {
                 knownJsonlFiles = new Set(fs.readdirSync(claudeProjectDir).filter(f => f.endsWith(".jsonl")));
@@ -1382,7 +1419,7 @@ ipcMain.handle("open-terminal", async (_event, sessionId, projectPath, isNew, se
                 }
             }
 
-            const providerEnv = provider.getEnvVars(mcpServer);
+            const providerEnv = provider.getEnvVars(mcpServer, sessionConfigDir);
             const ptyEnv = {
                 ...cleanPtyEnv,
                 TERM: "xterm-256color",
@@ -1423,6 +1460,7 @@ ipcMain.handle("open-terminal", async (_event, sessionId, projectPath, isNew, se
         forkFrom: sessionOptions?.forkFrom || null,
         providerId: sessionOptions?.provider || "claude",
         mcpServer,
+        configDir: sessionConfigDir,
         _openedAt: Date.now(),
     };
     activeSessions.set(sessionId, session);
@@ -1615,15 +1653,33 @@ ipcMain.on("close-terminal", (_event, sessionId) => {
 
 // Session transitions → session-transitions.js
 const sessionTransitions = require("./session-transitions");
-sessionTransitions.init({ PROJECTS_DIR, activeSessions, getMainWindow: () => mainWindow, log, rekeyMcpServer });
+sessionTransitions.init({
+    getAllProjectsDirs: () => getAllKnownConfigDirs().map(d => path.join(d, "projects")),
+    activeSessions,
+    getMainWindow: () => mainWindow,
+    log,
+    rekeyMcpServer,
+});
 const { detectSessionTransitions } = sessionTransitions;
 
-// --- fs.watch on projects directory ---
-let projectsWatcher = null;
+// --- fs.watch on projects directories (all known config dirs) ---
+let projectsWatchers = [];
 
 function startProjectsWatcher() {
-    if (!fs.existsSync(PROJECTS_DIR)) return;
+    for (const w of projectsWatchers) {
+        try {
+            w.close();
+        } catch {}
+    }
+    projectsWatchers = [];
 
+    for (const projectsDir of getAllKnownConfigDirs().map(d => path.join(d, "projects"))) {
+        if (!fs.existsSync(projectsDir)) continue;
+        startSingleProjectsWatcher(projectsDir);
+    }
+}
+
+function startSingleProjectsWatcher(projectsDir) {
     const pendingFolders = new Set();
     let debounceTimer = null;
 
@@ -1634,7 +1690,7 @@ function startProjectsWatcher() {
 
         let changed = false;
         for (const folder of folders) {
-            const folderPath = path.join(PROJECTS_DIR, folder);
+            const folderPath = path.join(projectsDir, folder);
             if (fs.existsSync(folderPath)) {
                 detectSessionTransitions(folder);
                 refreshFolder(folder);
@@ -1650,15 +1706,13 @@ function startProjectsWatcher() {
     }
 
     try {
-        projectsWatcher = fs.watch(PROJECTS_DIR, { recursive: true }, (_eventType, filename) => {
+        const watcher = fs.watch(projectsDir, { recursive: true }, (_eventType, filename) => {
             if (!filename) return;
 
-            // filename is relative, e.g. "folder-name/sessions-index.json" or "folder-name/abc.jsonl"
             const parts = filename.split(path.sep);
             const folder = parts[0];
             if (!folder || folder === ".git") return;
 
-            // Only care about .jsonl changes or top-level folder add/remove
             const basename = parts[parts.length - 1];
             if (parts.length === 1) {
                 pendingFolders.add(folder);
@@ -1672,9 +1726,11 @@ function startProjectsWatcher() {
             debounceTimer = setTimeout(flushChanges, 500);
         });
 
-        projectsWatcher.on("error", err => {
+        watcher.on("error", err => {
             console.error("Projects watcher error:", err);
         });
+
+        projectsWatchers.push(watcher);
     } catch (err) {
         console.error("Failed to start projects watcher:", err);
     }
@@ -1784,7 +1840,10 @@ app.whenReady().then(() => {
         });
     }
 
-    scheduleIpc.init(log, runScheduleCommand);
+    scheduleIpc.init(log, runScheduleCommand, () => {
+        const global = getSetting("global") || {};
+        return resolveShell(global.shellProfile || SETTING_DEFAULTS.shellProfile).path;
+    });
     startScheduler(log, runScheduleCommand);
 
     // Re-index search if FTS table was recreated (e.g. tokenizer config change)
@@ -1831,11 +1890,13 @@ app.on("before-quit", () => {
     // Shut down all MCP servers
     shutdownAllMcp();
 
-    // Close filesystem watcher
-    if (projectsWatcher) {
-        projectsWatcher.close();
-        projectsWatcher = null;
+    // Close filesystem watchers
+    for (const w of projectsWatchers) {
+        try {
+            w.close();
+        } catch {}
     }
+    projectsWatchers = [];
 
     // Kill all PTY processes on quit
     for (const [, session] of activeSessions) {

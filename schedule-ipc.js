@@ -5,9 +5,8 @@ const fs = require("fs");
 const os = require("os");
 const crypto = require("crypto");
 
-const CLAUDE_DIR = path.join(os.homedir(), ".claude");
-const PROJECTS_DIR = path.join(CLAUDE_DIR, "projects");
-const SCHEDULE_COMMANDS_DIR = path.join(CLAUDE_DIR, "commands");
+const { resolveConfigDir, getProjectsDir } = require("./config-dir-resolver");
+const DEFAULT_SCHEDULE_COMMANDS_DIR = path.join(os.homedir(), ".claude", "commands");
 
 const SCHEDULE_CREATOR_TEMPLATE = `---
 name: create-switchboard-schedule
@@ -111,9 +110,9 @@ Just describe the task you have in mind, or try one of these:
 
 function ensureScheduleCreatorCommand() {
     try {
-        const commandPath = path.join(SCHEDULE_COMMANDS_DIR, "create-switchboard-schedule.md");
+        const commandPath = path.join(DEFAULT_SCHEDULE_COMMANDS_DIR, "create-switchboard-schedule.md");
         if (!fs.existsSync(commandPath)) {
-            fs.mkdirSync(SCHEDULE_COMMANDS_DIR, { recursive: true });
+            fs.mkdirSync(DEFAULT_SCHEDULE_COMMANDS_DIR, { recursive: true });
             fs.writeFileSync(commandPath, SCHEDULE_CREATOR_TEMPLATE);
         }
     } catch (err) {
@@ -121,12 +120,12 @@ function ensureScheduleCreatorCommand() {
     }
 }
 
-function init(log, runCommand) {
+function init(log, runCommand, getShellPath) {
     const { parseFrontmatter, createScheduleSession, buildScheduleCommand } = require("./schedule-runner");
 
     ipcMain.handle("get-schedule-creator-command", () => {
         try {
-            const commandPath = path.join(SCHEDULE_COMMANDS_DIR, "create-switchboard-schedule.md");
+            const commandPath = path.join(DEFAULT_SCHEDULE_COMMANDS_DIR, "create-switchboard-schedule.md");
             ensureScheduleCreatorCommand();
             return fs.readFileSync(commandPath, "utf8");
         } catch (err) {
@@ -135,17 +134,18 @@ function init(log, runCommand) {
         }
     });
 
-    ipcMain.handle("create-schedule-session", (_event, projectPath) => {
+    ipcMain.handle("create-schedule-session", async (_event, projectPath) => {
         try {
             ensureScheduleCreatorCommand();
-            const commandPath = path.join(SCHEDULE_COMMANDS_DIR, "create-switchboard-schedule.md");
+            const commandPath = path.join(DEFAULT_SCHEDULE_COMMANDS_DIR, "create-switchboard-schedule.md");
             const systemPrompt = fs.readFileSync(commandPath, "utf8");
 
             const sessionId = crypto.randomUUID();
             const msgId = crypto.randomUUID();
             const timestamp = new Date().toISOString();
             const folder = projectPath.replace(/[\\/:_]/g, "-").replace(/^-/, "-");
-            const claudeProjectDir = path.join(PROJECTS_DIR, folder);
+            const configDir = await resolveConfigDir(projectPath, getShellPath());
+            const claudeProjectDir = path.join(getProjectsDir(configDir), folder);
 
             fs.mkdirSync(claudeProjectDir, { recursive: true });
             const jsonlPath = path.join(claudeProjectDir, `${sessionId}.jsonl`);

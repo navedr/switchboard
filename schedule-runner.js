@@ -1,11 +1,9 @@
 // schedule-runner.js — Scan schedule-*.md files, match cron, build commands
 const fs = require("fs");
 const path = require("path");
-const os = require("os");
 const crypto = require("crypto");
 
-const CLAUDE_DIR = path.join(os.homedir(), ".claude");
-const PROJECTS_DIR = path.join(CLAUDE_DIR, "projects");
+const { getAllKnownConfigDirs, getProjectsDir } = require("./config-dir-resolver");
 
 /** Parse YAML-like frontmatter from a markdown file (simple key: value parser). */
 function parseFrontmatter(content) {
@@ -77,60 +75,65 @@ function cronMatches(cronExpr, now) {
 /** Scan all projects for schedule-*.md files and return parsed schedule objects. */
 function scanSchedules(log) {
     const schedules = [];
-    try {
-        if (!fs.existsSync(PROJECTS_DIR)) return schedules;
-        const folders = fs.readdirSync(PROJECTS_DIR, { withFileTypes: true }).filter(d => d.isDirectory());
+    for (const configDir of getAllKnownConfigDirs()) {
+        const projectsDir = getProjectsDir(configDir);
+        try {
+            if (!fs.existsSync(projectsDir)) continue;
+            const folders = fs.readdirSync(projectsDir, { withFileTypes: true }).filter(d => d.isDirectory());
 
-        for (const folder of folders) {
-            const folderPath = path.join(PROJECTS_DIR, folder.name);
-            let projectPath = null;
-            try {
-                const jsonlFiles = fs.readdirSync(folderPath).filter(f => f.endsWith(".jsonl"));
-                for (const jf of jsonlFiles) {
-                    const head = fs.readFileSync(path.join(folderPath, jf), "utf8").slice(0, 4000);
-                    for (const line of head.split("\n").filter(Boolean)) {
+            for (const folder of folders) {
+                const folderPath = path.join(projectsDir, folder.name);
+                let projectPath = null;
+                try {
+                    const jsonlFiles = fs.readdirSync(folderPath).filter(f => f.endsWith(".jsonl"));
+                    for (const jf of jsonlFiles) {
+                        const head = fs.readFileSync(path.join(folderPath, jf), "utf8").slice(0, 4000);
+                        for (const line of head.split("\n").filter(Boolean)) {
+                            try {
+                                const entry = JSON.parse(line);
+                                if (entry.cwd) {
+                                    projectPath = entry.cwd;
+                                    break;
+                                }
+                            } catch {}
+                        }
+                        if (projectPath) break;
+                    }
+                } catch {}
+                if (!projectPath) continue;
+
+                const commandsDir = path.join(projectPath, ".claude", "commands");
+                try {
+                    if (!fs.existsSync(commandsDir)) continue;
+                    const files = fs
+                        .readdirSync(commandsDir)
+                        .filter(f => f.startsWith("schedule-") && f.endsWith(".md"));
+                    for (const file of files) {
                         try {
-                            const entry = JSON.parse(line);
-                            if (entry.cwd) {
-                                projectPath = entry.cwd;
-                                break;
-                            }
-                        } catch {}
+                            const content = fs.readFileSync(path.join(commandsDir, file), "utf8");
+                            const { meta, body } = parseFrontmatter(content);
+                            if (!meta.cron || !body) continue;
+                            if (meta.enabled === "false") continue;
+                            schedules.push({
+                                file,
+                                filePath: path.join(commandsDir, file),
+                                projectPath,
+                                folder: folder.name,
+                                name: meta.name || file,
+                                cron: meta.cron,
+                                slug: meta.slug || file.replace(/^schedule-/, "").replace(/\.md$/, ""),
+                                cli: meta.cli || {},
+                                prompt: body,
+                            });
+                        } catch (err) {
+                            if (log) log.warn(`[schedule] Failed to parse ${file}:`, err.message);
+                        }
                     }
-                    if (projectPath) break;
-                }
-            } catch {}
-            if (!projectPath) continue;
-
-            const commandsDir = path.join(projectPath, ".claude", "commands");
-            try {
-                if (!fs.existsSync(commandsDir)) continue;
-                const files = fs.readdirSync(commandsDir).filter(f => f.startsWith("schedule-") && f.endsWith(".md"));
-                for (const file of files) {
-                    try {
-                        const content = fs.readFileSync(path.join(commandsDir, file), "utf8");
-                        const { meta, body } = parseFrontmatter(content);
-                        if (!meta.cron || !body) continue;
-                        if (meta.enabled === "false") continue;
-                        schedules.push({
-                            file,
-                            filePath: path.join(commandsDir, file),
-                            projectPath,
-                            folder: folder.name,
-                            name: meta.name || file,
-                            cron: meta.cron,
-                            slug: meta.slug || file.replace(/^schedule-/, "").replace(/\.md$/, ""),
-                            cli: meta.cli || {},
-                            prompt: body,
-                        });
-                    } catch (err) {
-                        if (log) log.warn(`[schedule] Failed to parse ${file}:`, err.message);
-                    }
-                }
-            } catch {}
+                } catch {}
+            }
+        } catch (err) {
+            if (log) log.error("[schedule] Error scanning schedules:", err);
         }
-    } catch (err) {
-        if (log) log.error("[schedule] Error scanning schedules:", err);
     }
     return schedules;
 }
@@ -139,7 +142,15 @@ function scanSchedules(log) {
 function createScheduleSession(schedule) {
     const sessionId = crypto.randomUUID();
     const timestamp = new Date().toISOString();
-    const claudeProjectDir = path.join(PROJECTS_DIR, schedule.folder);
+    let claudeProjectDir;
+    for (const dir of getAllKnownConfigDirs().map(d => getProjectsDir(d))) {
+        const candidate = path.join(dir, schedule.folder);
+        if (fs.existsSync(candidate)) {
+            claudeProjectDir = candidate;
+            break;
+        }
+    }
+    if (!claudeProjectDir) claudeProjectDir = path.join(getProjectsDir(getAllKnownConfigDirs()[0]), schedule.folder);
 
     fs.mkdirSync(claudeProjectDir, { recursive: true });
     const jsonlPath = path.join(claudeProjectDir, `${sessionId}.jsonl`);

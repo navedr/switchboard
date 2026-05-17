@@ -139,17 +139,20 @@ function defaultResults() {
         const tb = new Date(b.modified || 0).getTime();
         return tb - ta;
     });
-    const recent = sessions.slice(0, 5);
+    const isRunning = s => typeof activePtyIds !== "undefined" && activePtyIds && activePtyIds.has(s.sessionId);
+    const active = sessions.filter(isRunning);
+    const inactive = sessions.filter(s => !isRunning(s));
+    const recent = [...active, ...inactive.slice(0, Math.max(5 - active.length, 0))];
     for (const s of recent) {
         results.push({
             type: "session",
             label: sessionLabel(s),
             meta: basename(s.projectPath),
             icon: "●",
-            iconRunning: typeof activePtyIds !== "undefined" && activePtyIds && activePtyIds.has(s.sessionId),
+            iconRunning: isRunning(s),
             score: 0,
             data: s,
-            section: "Recent",
+            section: isRunning(s) ? "Active" : "Recent",
         });
     }
     for (const a of ACTIONS.slice(0, 5)) {
